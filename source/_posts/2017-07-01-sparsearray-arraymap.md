@@ -2,7 +2,7 @@
 title: SparseArray和ArrayMap的优缺点和使用场景
 date: 2017-07-01 22:10:06
 toc: true
-tags: JVM
+tags: Android
 ---
 
 SparseArray和ArrayMap以及其衍生类都是Android独有的集合类，它们的衍生类主要有以下几个：
