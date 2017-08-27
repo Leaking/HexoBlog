@@ -3,8 +3,8 @@
 ## Source: https://github.com/hexojs/hexo/
 
 # Site
-title: 越塔
-subtitle: 书写是带动思维的一种方式
+title: Quinn Note
+subtitle: 
 description:
 author: Quinn Chen
 language: zh-CN
@@ -12,7 +12,7 @@ timezone:
 
 # URL
 ## If your site is put in a subdirectory, set url as 'http://yoursite.com/child' and root as '/child/'
-url: http://yoursite.com
+url: http://quinnchen.me
 root: /
 permalink: :year/:month/:day/:title/
 permalink_defaults:
@@ -43,7 +43,7 @@ highlight:
   auto_detect: false
   tab_replace:
 
-avatar: /images/avatar.jpg
+avatar: /images/avatar
 duoshuo_shortname: quinnchen
 
 # Category & Tag
