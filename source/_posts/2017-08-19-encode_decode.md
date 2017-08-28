@@ -178,7 +178,7 @@ BOM|Encoding|Endian
 字符	|UTF-16	|UTF-16小端	|UTF-16大端
 ---|---|---|---
 €:U+20AC |	20AC	|20 AC|AC 20
-𐐷:U+10437 |D801 DC37	|<font color=#6bd8d3 >D8 01</font> <font color=#ce996a >37 DC</font>|<font color=#6bd8d3 >D8 01</font> <font color=#ce996a >37 DC</font>
+𐐷:U+10437 |D801 DC37	|<font color=#6bd8d3 >D8 01</font> <font color=#ce996a >DC 37</font>|<font color=#6bd8d3 >01 D8</font> <font color=#ce996a >37 DC</font>
 
 
 另外，对于UTF-16和UTF-32，如果以BOM开头，则可以知道对应的字节序，但是如果没有BOM，则默认是big endian。而且，对于编码方式UTF-16BE，UTF-16LE，UTF-32BE，UTF-32LE，可以不需添加BOM，因为BE和LE已经分别声明是大端方式和小端方式了。
