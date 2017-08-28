@@ -1,9 +1,13 @@
 ---
 title: Unicode的设计和原理
 date: 2017-08-19 19:16:06
-toc: true
+toc: false
 tags: Android
 ---
+
+![](/images/unicode_logo.png)
+
+<!-- more -->
 
 Unicode是计算机科学发展的基石之一，也是一直伴随每个程序员的概念，而很多地方上都存在对Unicode一些错误或者不精确的解释。这篇文章将围绕以下几点，详细地介绍一次Unicode。
 
