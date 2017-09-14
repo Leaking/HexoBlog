@@ -50,7 +50,6 @@ public WebResourceResponse(String mimeType, String encoding, int statusCode,
         Log.i(TAG, String.format("shouldInterceptRequest in thread: %s[%s]  url: %s", Thread.currentThread().getName(), Thread.currentThread().getId() + "", url));
         return new WebResourceResponse("", "utf-8", new InputStream() {
             private InputStream inputStream = null;
-
             @Override
             public int read() throws IOException {
                 Log.i(TAG, String.format("Reading data in thread %s[%s] url  %s ", Thread.currentThread().getName(), Thread.currentThread().getId(), url));
@@ -83,11 +82,20 @@ public WebResourceResponse(String mimeType, String encoding, int statusCode,
     }
 ```
 
-
-
+```xml
 09-14 10:39:52.482 28644-28705/com.tencent.webviewsample I/MainActivity: Reading data from Thread-4[11409] url is https://timgsa.baidu.com/timg?image&quality=80&size=b9999_10000&sec=1505545242&di=8a65cd2cf3995201b8028f853f592c35&imgtype=jpg&er=1&src=http%3A%2F%2Fh.hiphotos.baidu.com%2Fzhidao%2Fpic%2Fitem%2F060828381f30e9240ff2cd434c086e061d95f76a.jpg
 09-14 10:39:52.482 28644-29235/com.tencent.webviewsample I/MainActivity: Reading data from Thread-7[11421] url is https://timgsa.baidu.com/timg?image&quality=80&size=b9999_10000&sec=1505545266&di=2eff701f8f336f6427bdd8a50321b016&imgtype=jpg&er=1&src=http%3A%2F%2Fscimg.jb51.net%2Fallimg%2F160131%2F14-1601311A539C3.jpg
 09-14 10:39:52.482 28644-28721/com.tencent.webviewsample I/MainActivity: Reading data from Thread-6[11419] url is https://timgsa.baidu.com/timg?image&quality=80&size=b9999_10000&sec=1505544739&di=aab230dbfbc901260fc148e6e87ab059&imgtype=jpg&er=1&src=http%3A%2F%2Fimg3.redocn.com%2F20100521%2FRedocn_2010052023544076.jpg
+
+```
+
+最终惊奇发现，读取图片数据流时是并发进行的，那么我们就可以突破`shouldInterceptRequest`单线程执行的问题了，只需要代理WebResourceResponse中指向资源的InputStream成员，当系统读取数据流第一个字时去执行下载。
+
+
+
+
+
+
 
 
 
