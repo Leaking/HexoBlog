@@ -7,6 +7,8 @@ tags: Android
 
 ![](/images/unicode_logo.png)
 
+带你重新恩施Unicode.
+
 <!-- more -->
 
 Unicode是计算机科学发展的基石之一，也是一直伴随每个程序员的概念，而很多地方上都存在对Unicode一些错误或者不精确的解释。这篇文章将围绕以下几点，详细地介绍一次Unicode。
