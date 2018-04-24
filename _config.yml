@@ -71,7 +71,19 @@ theme: maupassant
 # Deployment
 # repo: git@139.162.7.152:/home/git/hexo/hexo.git
 ## Docs: https://hexo.io/docs/deployment.html
+# deploy:
+#     type: git
+#     repo: git@quinnchen.me:/home/git/hexo/hexo.git
+#     branch: master
+
 deploy:
-    type: git
-    repo: git@quinnchen.me:/home/git/hexo/hexo.git
-    branch: master
+  type: rsync
+  host: 172.96.229.236
+  user: root
+  root: /var/www/hexo
+  port: 28398
+  delete: true
+  verbose: true
+  ignore_errors: false
+
+
