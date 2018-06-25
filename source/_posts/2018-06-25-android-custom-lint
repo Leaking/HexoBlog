@@ -1,0 +1,32 @@
+---
+title: Android自定义Lint实践
+date: 2018-06-25 20:38:40
+tags: Android
+---
+
+
+
+<!-- 1、介绍lint的作用
+2、介绍Android Studio中和./gradlew lint的使用 -->
+3、介绍自定义lint的作用
+4、扫描范围，分类
+5、实现原理
+6、实现过程
+7、打包发布
+
+
+
+Lint是Google为Android提供的一套代码静态扫描工具，让你在编码过程中IDE就能发现并提示代码的质量、安全、性能问题，而无需编译项目或者编写测试用例。Google为Android提供了一系列[自带的Lint规则](https://android.googlesource.com/platform/tools/base/+/master/lint/libs/lint-checks/src/main/java/com/android/tools/lint/checks)，而有时候，我们想要更特殊的代码扫描规则，用来辅助我们的项目框架，那么此时Android自带的Lint规则就无法满足我们的需求，我们需要自己编写自定义Lint。接下来让我们看看自定义Lint的强大之处。
+
+比如，每个项目都有BaseActivity，很多底层逻辑都和BaseActvity关联，所以基本所有业务页面都需要继承自BaseActvity。而此处为了建立强有效的规范，我们可以通过[Application.ActivityLifecycleCallbacks](https://developer.android.com/reference/android/app/Application.ActivityLifecycleCallbacks)在运行时检测Activiy的类型，但是这样需要运行期间才能发现问题。或者，我们可以通过在编译期间，检测生成的class类型，从而在编译期间抛出异常。而如果我们使用自定义Lint，则可以在编码期间就发现问题，并给出提示。接下来就我们会针对这个场景编写一个自定义Lint规则。
+
+另外，Lint也经常应用于一些组件库，规范开发者对组件的使用，比如(butterknife-lint)[https://github.com/JakeWharton/butterknife/tree/master/butterknife-lint]
+ 
+
+Lint的扫描范围
+
+
+
+
+
+
