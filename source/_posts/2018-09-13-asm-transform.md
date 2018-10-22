@@ -1,9 +1,13 @@
 ---
-title: ASM在Android开发中的应用
+title: 如何使用ASM开发一个快速的Android编译插件
 date: 2018-09-13 23:12:06
 toc: true
 tags: Android, JVM
 ---
+
+总所周知，JVM平台上的语言，它们共同基础都是字节码，而历来JVM平台上的技术，都不乏对字节码操作的场景，其中不得不提一个很成功的项目，就是可以动态扩展和生成class的cglib，这个项目有多成功呢？几大著名的mock框架，如Mockio，几大著名的ORM框架，如Hibernate，MyBatis，还有JavaEE中长盛不衰的Spring/SprintBoot框架，这些都使用cglib来实现字节码（也就是class文件）的相关操作。
+
+
 
 1、ASM是啥
 2、修改class的时机是啥，介绍transform，以及目前Android编译流程中的几个transform
