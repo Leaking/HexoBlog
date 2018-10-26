@@ -5,16 +5,39 @@ toc: true
 tags: Android, JVM
 ---
 
+
+
 众所周知，JVM平台的语言，它们共同基础都是字节码，而历来JVM平台上的技术，都不乏对字节码操作的场景，
 
-+ 从传统的ORM框架如Hibernate，MyBatis，到比较流行的mock框架，如Mockio，再到JavaEE中长盛不衰的
-Spring/SprintBoot框架，背后都有修改/生成字节码的逻辑。顺便提一句，以上这几个框架基本都使用了cglib这个框架来负责对字节码的处理，而cglib是基于asm实现的。
++ 从传统的ORM框架如Hibernate，MyBatis，到比较流行的mock框架，如Mockio，再到JavaEE中长盛不衰的Spring/SprintBoot 框架，背后都有操作字节码的身影。顺便提一句，以上这几个框架基本都使用了cglib这个框架来负责对字节码的处理，而cglib是基于asm实现的。
 
 + 而除了以上几个框架，很多JVM语言的语法糖，很多都是借助ASM去动态/静态生成字节码的方式实现
 
 + 再到我们的Android开发中，也不乏操作字节码的身影，而这些大多发生在Android的编译期间，比如lambda语法的[desugar](https://developer.android.com/studio/write/java8-support)过程
 
-操作字节码可以帮我们突破JVM语言本身的很多限制，在代码生成，AOP，性能监控等领域都能起到XXXX的作用。而作为Android开发，我们能否探索一下，在Android平台上，能否借助字节码技术做些什么事情呢？
+操作字节码可以帮我们突破JVM语言本身的很多限制，在代码生成，AOP，性能监控等领域都能起到四两拨千斤的作用。而在Android开发的领域中，我们来探索一下，能否借助字节码技术做一些工具呢？
+
+首先明确我们的目标，我们的目标是要在编译期间，处理所有Android工程中的class文件，jar包文件，然后对指定class进行干预，然后做一些瞒天过海，狸猫换太子的勾当。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
