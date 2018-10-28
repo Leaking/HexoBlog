@@ -5,6 +5,10 @@ toc: true
 tags: Android, JVM
 ---
 
+JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中长盛不衰的Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，都离不开操作字节码，我们能否做XXX事情，这篇文章将分享，，，，
+
+
+
 
 
 众所周知，JVM平台的语言，它们共同基础都是字节码，而历来JVM平台上的技术，都不乏对字节码操作的场景，
@@ -17,10 +21,10 @@ tags: Android, JVM
 
 操作字节码可以帮我们突破JVM语言本身的很多限制，在代码生成，AOP，性能监控等领域都能起到四两拨千斤的作用。而在Android开发的领域中，我们来探索一下，能否借助字节码技术做一些工具呢？
 
-首先明确我们的目标，我们的目标是要在编译期间，处理所有Android工程中的class文件，jar包文件，然后对指定class进行干预，然后做一些瞒天过海，狸猫换太子的勾当。
+首先明确我们的目标，我们的目标是*在编译期间，处理所有Android工程中的class文件，jar包文件，甚至资源文件，对其中某些文件进行干预，然后做一些瞒天过海，狸猫换太子的勾当*。
 
 
-
+而要达成这个目的，我们需要在原有的编译过程，插入一个我们的任务，在我们的任务中，我们可以接收并处理所有class，jar，而且这一个任务一定要在打包成dex之前，这时候我们就需要引入Transform的概念，我们这篇文章第一部分将介绍Transform的原理，以及在Android原有的编译流程中，被应用到了哪些地方，以及如何优化Transofrm的吞吐量，加快编译速度。而要达成我们的目的，我们除了找到一个时间处理字节码还不够，我们还需要知道怎么处理字节码，常用的框架有ASM, Javasisit，AspectJ，我们将在文章的第二部分介绍对比这几个框架，以及详细介绍ASM的使用，以及部分字节码基础支持，还有我在将ASM应用于Android编译过程中遇到的问题以及解决方案。
 
 
 
