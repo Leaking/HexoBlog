@@ -5,7 +5,203 @@ toc: true
 tags: Android, JVM
 ---
 
-JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中长盛不衰的Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，都离不开操作字节码，我们能否做XXX事情，这篇文章将分享，，，，
+JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中长盛不衰的Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，还有大名鼎鼎的[cglib](https://github.com/cglib/cglib)项目，可以突破Java中只能对接口类做动态代理的限制，实现更自由的动态代理。
+
+而Android开发，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，那么我们能否使用字节码做一些Android开发相关的hack。这篇文章将介绍如何使用ASM开发一些工具。全文将围绕以下几点展开
+
++ 如何编写一个快速的编译插件去处理所有class/jar文件
++ 字节码基础知识
++ ASM的使用与常见的问题
++ 几个具体应用案例
+
+话不多说，让我们开始吧
+
+
+## 如何处理全局的class/jar文件
+
+想要实现这一步，我们需要引出一个概念，就是Android gradle plugin 1.5开始引入的[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)。解析来让我们一起来好好研究下Transform。
+
+我们先从如何使用Transform说起，首先我们需要编写一个自定义插件，然后在插件中注册一个自定义Transform。这其中我们需要先通过gradle引入Transform的依赖，这里有一个坑，Transform的库最开始是独立的，后来从2.0.0版本开始，被归入了Android编译系统依赖的gradle-api中，让我们看看Transform在[jcenter](https://dl.bintray.com/android/android-tools/com/android/tools/build/transform-api/)上的历个版本。
+
+![](/images/transform_2.png)
+
+所以，很久很久以前我引入transform依赖是这样
+
+```groovy
+
+compile 'com.android.tools.build:transform-api:1.5.0'
+
+```
+
+现在是这样
+
+```groovy
+
+implementation 'com.android.tools.build:gradle-api:3.1.4'  //从2.0.0版本开始就是在gradle-api中了
+
+```
+
+接下来让我们在自定义插件中注册一个自定义Transform
+
+
+```java
+
+public class CustomPlugin implements Plugin<Project> {
+
+    @SuppressWarnings("NullableProblems")
+    @Override
+    public void apply(Project project) {
+        AppExtension appExtension = (AppExtension)project.getProperties().get("android");
+        appExtension.registerTransform(new CustomTransform(), Collections.EMPTY_LIST);
+    }
+
+}
+
+```
+
+新建一个自定义Transform
+
+
+```java
+
+/**
+ * 1、Transform的工作:主要是负责将输入的class（可能来自于class文件和jar文件）运输给下一个Transform，运输过程中
+ * 你可以对这些class动动手脚，改改字节码。而Transform的输出路径，通过outputProvider获取
+ * 2、Transform输入的来源可以通过Scope的概念指定，
+ * 3、Transform输入的具体文件类型可以通过ContentType指定
+ * 4、Transform可以指定是否支持增量编译，如果增量编译，每次编译，Android编译系统会告诉当前Transform目前哪些文件发生了变化，以及发生
+ * 什么变化。
+ * 5、Transform的每个输入，并不一定要输出到下一个Transform，它也可以只获取输入，而不输出。输入其实分为两种，一种是消费型输入，需要输出到下个Transform，
+ * 一种是引用型输入，getScope方法返回的就是消费型输入，getReferencedScopes方法返回的就是引用型输入。
+ */
+public class CustomTransform extends Transform {
+
+    public static final String TAG = "CustomTransform";
+
+    public CustomTransform() {
+        super();
+    }
+
+    @Override
+    public String getName() {
+        return "CustomTransform";
+    }
+
+    @Override
+    public void transform(TransformInvocation transformInvocation) throws TransformException, InterruptedException, IOException {
+        super.transform(transformInvocation);
+        //消费型输入，可以从中获取jar包和class文件夹路径。需要输出给下一个任务
+        Collection<TransformInput> inputs = transformInvocation.getInputs();
+        //引用型输出，无需输出。
+        Collection<TransformInput> referencedInputs = transformInvocation.getReferencedInputs();
+        //OutputProvider管理输出路径，如果消费型输入为空，你会发现OutputProvider == null
+        TransformOutputProvider outputProvider = transformInvocation.getOutputProvider();
+        for(TransformInput input : inputs) {
+            for(JarInput jarInput : input.getJarInputs()) {
+                File dest = outputProvider.getContentLocation(
+                        jarInput.getFile().getAbsolutePath(),
+                        jarInput.getContentTypes(),
+                        jarInput.getScopes(),
+                        Format.JAR);
+                FileUtils.copyFile(jarInput.getFile(), dest);
+            }
+            for(DirectoryInput directoryInput : input.getDirectoryInputs()) {
+                File dest = outputProvider.getContentLocation(directoryInput.getName(),
+                        directoryInput.getContentTypes(), directoryInput.getScopes(),
+                        Format.DIRECTORY);
+                FileUtils.copyDirectory(directoryInput.getFile(), dest);
+            }
+        }
+
+    }
+
+
+    @Override
+    public Set<QualifiedContent.ContentType> getInputTypes() {
+        return TransformManager.CONTENT_CLASS;
+    }
+
+    @Override
+    public Set<? super QualifiedContent.Scope> getScopes() {
+        return TransformManager.SCOPE_FULL_PROJECT;
+    }
+
+    @Override
+    public Set<QualifiedContent.ContentType> getOutputTypes() {
+        return super.getOutputTypes();
+    }
+
+    @Override
+    public Set<? super QualifiedContent.Scope> getReferencedScopes() {
+        return TransformManager.EMPTY_SCOPES;
+    }
+
+
+    @Override
+    public Map<String, Object> getParameterInputs() {
+        return super.getParameterInputs();
+    }
+
+    @Override
+    public boolean isCacheable() {
+        return false;
+    }
+
+    @Override
+    public boolean isIncremental() {
+        return true;
+    }
+
+}
+
+
+```
+1. Transform的工作:主要是负责将输入的class（可能来自于class文件和jar文件）输出给下一个Transform，中间过程你可以对这些class动动手脚，改改字节码。而Transform的输出路径，通过outputProvider获取。
+2. Transform输入的来源可以通过Scope的概念指定，
+
+```java
+ 	enum Scope implements ScopeType {
+        /** 主module */
+        PROJECT(0x01),
+        /** 所有子module */
+        SUB_PROJECTS(0x04),
+        /** 第三方依赖 */
+        EXTERNAL_LIBRARIES(0x10),
+        /** 测试代码 */
+        TESTED_CODE(0x20),
+        /** provided依赖 */
+        PROVIDED_ONLY(0x40)
+    }
+```
+	
+3. Transform输入的具体文件类型可以通过ContentType指定
+
+4. Transform可以指定是否支持增量编译，如果增量编译，每次编译，Android编译系统会告诉当前Transform目前哪些文件发生了变化，以及发生
+什么变化。
+5. Transform的每个输入，并不一定要输出到下一个Transform，它也可以只获取输入，而不输出。输入其实分为两种，一种是消费型输入，需要输出到下个Transform，
+一种是引用型输入，getScope方法返回的就是消费型输入，getReferencedScopes方法返回的就是引用型输入。
+
+
+该方法在 javaCompile 之后调用， 会遍历所有的 transform，然后一一添加进 TransformManager。 加完自定义的 Transform 之后，再添加 Proguard, JarMergeTransform, MultiDex, Dex 等 Transform。
+
+
+1、Transform的原理
+
+
+Input
+SecondaryInput
+ReferencedInput
+ParameterInput
+
+
+1、Android的编译过程，把Transform应用到什么地方
+2、如何使用自定义Transform
+
+
+
+
+
+首先得让我们来看看Android编译过程，proguard，java 8语法的desugar等等步骤其实都是需要全局处理所有class/jar文件，那么它们是怎么实现的呢？这个时候就需要引入一个概念：[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)，
 
 
 
