@@ -173,8 +173,41 @@ public class CustomTransform extends Transform {
         PROVIDED_ONLY(0x40)
     }
 ```
-	
+
+一般我们都是组合使用上面这几个类型，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的Scope集合方便开发者使用。	
+
+
 3. Transform输入的具体文件类型可以通过ContentType指定
+
+一般可以使用的类型只有class和jar两种文件类型，注意，DefaultContentType枚举类型中的CLASSES就包含了class文件和jar文件。此处还有另一个枚举类型RESOURCE，我还确定它的使用方式，貌似并不是代表图片，manifest这些资源文件。
+
+```java
+enum DefaultContentType implements ContentType {
+        /**
+         * The content is compiled Java code. This can be in a Jar file or in a folder. If
+         * in a folder, it is expected to in sub-folders matching package names.
+         */
+        CLASSES(0x01),
+
+        /** The content is standard Java resources. */
+        RESOURCES(0x02);
+
+        private final int value;
+
+        DefaultContentType(int value) {
+            this.value = value;
+        }
+
+        @Override
+        public int getValue() {
+            return value;
+        }
+    }
+```
+在另一个枚举类中，还有一些隐藏类型，比如DEX文件，不过这些只有Android编译器可以使用。可以详见[com.android.build.gradle.internal.pipeline.ExtendedContentType](https://android.googlesource.com/platform/tools/base/+/studio-master-dev/build-system/gradle-core/src/main/java/com/android/build/gradle/internal/pipeline/ExtendedContentType.java?autodive=0%2F%2F%2F)，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的ContentType集合方便开发者使用，而我们字节码处理一般使用`TransformManager.CONTENT_CLASS`
+
+
+
 
 4. Transform可以指定是否支持增量编译，如果增量编译，每次编译，Android编译系统会告诉当前Transform目前哪些文件发生了变化，以及发生
 什么变化。
