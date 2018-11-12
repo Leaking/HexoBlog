@@ -1,26 +1,25 @@
 ---
 title: 如何使用ASM对你Android项目中的class为所欲为
 date: 2018-09-13 23:12:06
-toc: true
 tags: Android, JVM
 ---
 
-作为Android开发的你，
+作为Android开发，
 
-是否也曾想过，要对全局所有class插桩，做一些性能监控;
-是否也曾遇到，某个第三方依赖，用得不爽，但是不想拿它的源码修改再重新编译，而想对它的class直接做点手脚，比如给Okhttp加一个全局的Interceptor，监控流量？
-是否也曾想过，每次写打log时，想让TAG自动生成，让它默认就是当前类的名称，甚至你想让log里自动加上当前代码所在的行数，当同个class中有多行相同日志时，才容易定位日志;
-是否也曾想过，Java自带的动态代理太弱了，只能对接口类做动态代理，而我们想对任何类做动态代理;
+是否也曾这样想，要对全局所有class插桩，做UI，内存，网络等等方面性能监控;
+是否也曾这样想，某个第三方依赖，用得不爽，但是不想拿它的源码修改再重新编译，而想对它的class直接做点手脚，比如给Okhttp加一个全局的Interceptor，监控流量？
+是否也曾这样想，每次写打log时，想让TAG自动生成，让它默认就是当前类的名称，甚至你想让log里自动加上当前代码所在的行数，当同个class中有多行相同日志时，才容易定位日志;
+是否也曾这样想，Java自带的动态代理太弱了，只能对接口类做动态代理，而我们想对任何类做动态代理;
 
-为了实现上面这些猜想，可能很多人和我一样，第一反应就是能否通过代码生成技术来实现，但是想来想去，APT什么的，貌似不能满足上面的需求，以上这些问题都不能从Java文件入手，而应该从class文件人手。而从class文件入手，我们不得不来近距离接触一下字节码了！
+为了实现上面这些猜想，可能我们最开始的第一反应，都是能否通过代码生成技术来实现，或者反射、或者动态代理来实现，但是想来想去，APT什么的，貌似不能满足上面的需求，而且，以上这些问题都不能从Java文件入手，而应该从class文件寻找突破。而从class文件入手，我们就不得不来近距离接触一下字节码！
 
-JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中长盛不衰的Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，还有大名鼎鼎的[cglib](https://github.com/cglib/cglib)项目，都有字节码的声影。
+JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中长盛不衰的Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，还有大名鼎鼎的[cglib](https://github.com/cglib/cglib)项目，都有字节码的身影。
 
-字节码相关技术的强大之处不用多说，而且Android开发中，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，所以如果我们使用字节码技术做一下hack，还可以天然地兼容Java和Kotlin语言，真香。
+字节码相关技术的强大之处不用多说，而且Android开发中，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，所以如果我们在Android开发中，使用字节码技术做一下hack，还可以天然地兼容Java和Kotlin语言，真香。
 
-这篇文章我将介绍如何使用开发一些工具。全文将围绕以下几点展开
+这篇文章讲介绍字节码技术在Android开发中的应用，主要围绕以下几点展开：
 
-+ 如何编写一个快速的编译插件去处理所有class/jar文件
++ 如何使用Transform编写一个快速的编译插件，处理所有class/jar
 + 字节码基础知识
 + ASM的使用与常见的问题
 + 几个具体应用案例
@@ -28,11 +27,11 @@ JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernat
 话不多说，让我们开始吧
 
 
-## 如何处理全局的class/jar文件
+## 如何使用Transform编写一个快速的编译插件，处理所有class/jar
 
-想要实现这一步，我们需要引出一个概念，就是Android gradle plugin 1.5开始引入的[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)。解析来让我们一起来好好研究下Transform。
+我们在这里先引出一个概念，就是Android gradle plugin 1.5开始引入的[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)。接下来来让我们一起来好好研究下Transform。
 
-我们先从如何使用Transform说起，首先我们需要编写一个自定义插件，然后在插件中注册一个自定义Transform。这其中我们需要先通过gradle引入Transform的依赖，这里有一个坑，Transform的库最开始是独立的，后来从2.0.0版本开始，被归入了Android编译系统依赖的gradle-api中，让我们看看Transform在[jcenter](https://dl.bintray.com/android/android-tools/com/android/tools/build/transform-api/)上的历个版本。
+我们先从如何引入Transform依赖说起，首先我们需要编写一个自定义插件，然后在插件中注册一个自定义Transform。这其中我们需要先通过gradle引入Transform的依赖，这里有一个坑，Transform的库最开始是独立的，后来从2.0.0版本开始，被归入了Android编译系统依赖的gradle-api中，让我们看看Transform在[jcenter](https://dl.bintray.com/android/android-tools/com/android/tools/build/transform-api/)上的历个版本。
 
 ![](/images/transform_2.png)
 
@@ -51,9 +50,7 @@ implementation 'com.android.tools.build:gradle-api:3.1.4'  //从2.0.0版本开�
 ```
 
 
-
-
-接下来让我们在自定义插件中注册一个自定义Transform
+然后，让我们在自定义插件中注册一个自定义Transform，gradle插件可以使用java，groovy，kotlin编写，我这里选择使用java。
 
 
 ```java
@@ -172,7 +169,7 @@ public class CustomTransform extends Transform {
 1. Transform最重要的工作是负责将输入的class（可能来自于class文件和jar文件）输出给下一个Transform（这一步可以参考上面代码中的transform方法），中间过程你可以对这些class动动手脚，改改字节码。而Transform的输出路径，通过OutputProvider获取。另外，Transform可以获取输入的class，而不输出，这取决于输入类型，输入分为两种，一种是消费型输入，需要输出到下个Transform，另一种是引用型输入，不需要输出到下一个Transform。getScope
 方法返回的就是消费型输入，getReferencedScopes方法返回的是引用型输入。当getScope返回为空时，你会发现OutputProvider会是一个空对象。那让我们想一个问题，什么时候我只需要引用型输出呢？其实很常见，比如，Android Studio的Instant Run在判断当前编译的和上次编译的差异时，就需要检查class和jar包发生什么变化，而不需要输出任何东西，此时就只需要引用型输入即可。详见[InstantRunVerifierTransform](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/InstantRunVerifierTransform.java)
 
-另外，我们从transform的代码可以发现，Transform的输入，分为了jar包和文件夹两种类型。
+另外，我们从Tansform的代码可以发现，Transform的输入，分为了jar包和文件夹两种类型。
 
 2. Transform输入的来源可以通过Scope的概念指定，
 
