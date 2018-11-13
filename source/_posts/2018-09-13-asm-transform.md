@@ -67,6 +67,16 @@ public class CustomPlugin implements Plugin<Project> {
 
 ```
 
+接下来介绍Transform，介绍它怎么用之前，先介绍一下它的原理，一图胜千言，请看图
+
+
+
+每个Transform其实都是一个gradle task，Android编译器将每个Transform串连起来，第一个Transform接收来自javac编译class的结果，以及已经拉取、缓存在本地的第三方依赖（jar. aar），这些class在Transform组成的链条上流动，每个Transform节点可以对class进行处理再传递给下一个Transform。我们常见的混淆，Desugar等逻辑，如今都是一个个的Transform，而我们自定义的逻辑，会插入到这个Transform链条的最前面。
+
+
+
+
+
 新建一个自定义Transform
 
 
