@@ -67,14 +67,69 @@ public class CustomPlugin implements Plugin<Project> {
 
 ```
 
-接下来介绍Transform，介绍它怎么用之前，先介绍一下它的原理，一图胜千言，请看图
+接下来介绍Transform，介绍怎么用它之前，先介绍一下它的原理，一图胜千言，请看图
 
 
-
-每个Transform其实都是一个gradle task，Android编译器将每个Transform串连起来，第一个Transform接收来自javac编译class的结果，以及已经拉取、缓存在本地的第三方依赖（jar. aar），这些class在Transform组成的链条上流动，每个Transform节点可以对class进行处理再传递给下一个Transform。我们常见的混淆，Desugar等逻辑，如今都是一个个的Transform，而我们自定义的逻辑，会插入到这个Transform链条的最前面。
-
+![](/images/consume_transform.png)
 
 
+从图中可知，每个Transform其实都是一个gradle task，Android编译器将每个Transform串连起来，第一个Transform接收来自javac编译class的结果，以及已经拉取到在本地的第三方依赖（jar. aar），还有resource资源，注意，这里的resource并非res资源，而是asset目录下的资源。这些编译的中间产物，在Transform组成的链条上流动，每个Transform节点可以对class进行处理再传递给下一个Transform。我们常见的混淆，Desugar等逻辑，它们的实现如今都是封装在一个个Transform中，而我们自定义的Transform，会插入到这个Transform链条的最前面。
+
+
+但其实，上面这幅图，只是展示Transform的其中一种情况。而Transform其实可以有两种输入，一种是消费型的，当前Transform需要将消费型型输出给下一个Transform，另一种是引用型的，当前Transform可以读取这些输入，而不需要输出给下一个Transform，比如Instant Run就是通过这种方式，检查两次编译之间的diff的。至于怎么在一个Transform中声明两种输入，以及怎么处理两种输入，后面将有示例代码。
+
+
+讲完了Transform的数据流动的原理，再介绍Transform的输入数据的过滤机制，Transform的数据输入，可以通过Scope和ContentType两种方式过滤。
+
+![](/images/scope.png)
+
+ContentType，顾名思义，就是数据类型，在插件开发中，我们一般只能使用CLASSES和RESOURCES两种类型，注意，其中的CLASSES已经包含了class文件和jar文件
+
+```java
+enum DefaultContentType implements ContentType {
+        /**
+         * The content is compiled Java code. This can be in a Jar file or in a folder. If
+         * in a folder, it is expected to in sub-folders matching package names.
+         */
+        CLASSES(0x01),
+
+        /** The content is standard Java resources. */
+        RESOURCES(0x02);
+
+        private final int value;
+
+        DefaultContentType(int value) {
+            this.value = value;
+        }
+
+        @Override
+        public int getValue() {
+            return value;
+        }
+    }
+```
+
+
+另一个枚举类中，还有一些隐藏类型，比如DEX文件，不过这些只有Android编译器可以使用。可以详见[com.android.build.gradle.internal.pipeline.ExtendedContentType](https://android.googlesource.com/platform/tools/base/+/studio-master-dev/build-system/gradle-core/src/main/java/com/android/build/gradle/internal/pipeline/ExtendedContentType.java?autodive=0%2F%2F%2F)，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的ContentType集合方便开发者使用，而我们字节码处理一般使用`TransformManager.CONTENT_CLASS`
+
+Scope相比ContentType则是另一个维度的过滤规则，
+
+```java
+    enum Scope implements ScopeType {
+        /** 主module */
+        PROJECT(0x01),
+        /** 所有子module */
+        SUB_PROJECTS(0x04),
+        /** 第三方依赖 */
+        EXTERNAL_LIBRARIES(0x10),
+        /** 测试代码 */
+        TESTED_CODE(0x20),
+        /** provided依赖 */
+        PROVIDED_ONLY(0x40)
+    }
+```
+
+一般我们都是组合使用上面这几个类型，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的Scope集合方便开发者使用。
 
 
 新建一个自定义Transform
@@ -174,68 +229,10 @@ public class CustomTransform extends Transform {
 
 ```
 
-我们来按几个关键方法逐一分析Transform的工作原理
-
-1. Transform最重要的工作是负责将输入的class（可能来自于class文件和jar文件）输出给下一个Transform（这一步可以参考上面代码中的transform方法），中间过程你可以对这些class动动手脚，改改字节码。而Transform的输出路径，通过OutputProvider获取。另外，Transform可以获取输入的class，而不输出，这取决于输入类型，输入分为两种，一种是消费型输入，需要输出到下个Transform，另一种是引用型输入，不需要输出到下一个Transform。getScope
-方法返回的就是消费型输入，getReferencedScopes方法返回的是引用型输入。当getScope返回为空时，你会发现OutputProvider会是一个空对象。那让我们想一个问题，什么时候我只需要引用型输出呢？其实很常见，比如，Android Studio的Instant Run在判断当前编译的和上次编译的差异时，就需要检查class和jar包发生什么变化，而不需要输出任何东西，此时就只需要引用型输入即可。详见[InstantRunVerifierTransform](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/InstantRunVerifierTransform.java)
-
-另外，我们从Tansform的代码可以发现，Transform的输入，分为了jar包和文件夹两种类型。
-
-2. Transform输入的来源可以通过Scope的概念指定，
-
-```java
- 	enum Scope implements ScopeType {
-        /** 主module */
-        PROJECT(0x01),
-        /** 所有子module */
-        SUB_PROJECTS(0x04),
-        /** 第三方依赖 */
-        EXTERNAL_LIBRARIES(0x10),
-        /** 测试代码 */
-        TESTED_CODE(0x20),
-        /** provided依赖 */
-        PROVIDED_ONLY(0x40)
-    }
-```
-
-一般我们都是组合使用上面这几个类型，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的Scope集合方便开发者使用。	
-
-
-3. Transform输入的具体文件类型可以通过ContentType指定
-
-一般可以使用的类型只有class和jar两种文件类型，注意，DefaultContentType枚举类型中的CLASSES就包含了class文件和jar文件。此处还有另一个枚举类型RESOURCE，我还没确定它的使用方式，貌似并不是代表图片，manifest这些资源文件，而是传统java工程里的resources文件夹下的资源。
-
-```java
-enum DefaultContentType implements ContentType {
-        /**
-         * The content is compiled Java code. This can be in a Jar file or in a folder. If
-         * in a folder, it is expected to in sub-folders matching package names.
-         */
-        CLASSES(0x01),
-
-        /** The content is standard Java resources. */
-        RESOURCES(0x02);
-
-        private final int value;
-
-        DefaultContentType(int value) {
-            this.value = value;
-        }
-
-        @Override
-        public int getValue() {
-            return value;
-        }
-    }
-```
-在另一个枚举类中，还有一些隐藏类型，比如DEX文件，不过这些只有Android编译器可以使用。可以详见[com.android.build.gradle.internal.pipeline.ExtendedContentType](https://android.googlesource.com/platform/tools/base/+/studio-master-dev/build-system/gradle-core/src/main/java/com/android/build/gradle/internal/pipeline/ExtendedContentType.java?autodive=0%2F%2F%2F)，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的ContentType集合方便开发者使用，而我们字节码处理一般使用`TransformManager.CONTENT_CLASS`
-
 
 
 4. Transform可以指定是否支持增量编译，如果增量编译，每次编译，Android编译系统会告诉当前Transform目前哪些文件发生了变化，以及发生
 什么变化。
-5. Transform的每个输入，并不一定要输出到下一个Transform，它也可以只获取输入，而不输出。输入其实分为两种，一种是消费型输入，需要输出到下个Transform，
-一种是引用型输入，getScope方法返回的就是消费型输入，getReferencedScopes方法返回的就是引用型输入。
 
 
 该方法在 javaCompile 之后调用， 会遍历所有的 transform，然后一一添加进 TransformManager。 加完自定义的 Transform 之后，再添加 Proguard, JarMergeTransform, MultiDex, Dex 等 Transform。
@@ -275,8 +272,6 @@ ParameterInput
 
 首先明确我们的目标，我们的目标是*在编译期间，处理所有Android工程中的class文件，jar包文件，甚至资源文件，对其中某些文件进行干预，然后做一些瞒天过海，狸猫换太子的勾当*。
 
-
-而要达成这个目的，我们需要在原有的编译过程，插入一个我们的任务，在我们的任务中，我们可以接收并处理所有class，jar，而且这一个任务一定要在打包成dex之前，这时候我们就需要引入Transform的概念，我们这篇文章第一部分将介绍Transform的原理，以及在Android原有的编译流程中，被应用到了哪些地方，以及如何优化Transofrm的吞吐量，加快编译速度。而要达成我们的目的，我们除了找到一个时间处理字节码还不够，我们还需要知道怎么处理字节码，常用的框架有ASM, Javasisit，AspectJ，我们将在文章的第二部分介绍对比这几个框架，以及详细介绍ASM的使用，以及部分字节码基础支持，还有我在将ASM应用于Android编译过程中遇到的问题以及解决方案。
 
 
 
