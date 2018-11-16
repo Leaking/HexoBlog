@@ -70,7 +70,8 @@ public class CustomPlugin implements Plugin<Project> {
 接下来介绍Transform，介绍怎么用它之前，先介绍一下它的原理，一图胜千言，请看图
 
 
-![](/images/consume_transform.png)
+![](/images/transformconsume_transform.png)
+
 
 
 从图中可知，每个Transform其实都是一个gradle task，Android编译器将每个Transform串连起来，第一个Transform接收来自javac编译class的结果，以及已经拉取到在本地的第三方依赖（jar. aar），还有resource资源，注意，这里的resource并非res资源，而是asset目录下的资源。这些编译的中间产物，在Transform组成的链条上流动，每个Transform节点可以对class进行处理再传递给下一个Transform。我们常见的混淆，Desugar等逻辑，它们的实现如今都是封装在一个个Transform中，而我们自定义的Transform，会插入到这个Transform链条的最前面。
@@ -80,10 +81,18 @@ public class CustomPlugin implements Plugin<Project> {
 
 
 讲完了Transform的数据流动的原理，再介绍Transform的输入数据的过滤机制，Transform的数据输入，可以通过Scope和ContentType两种方式过滤。
+![](/images/transformscope&contenttype.png)
 
-![](/images/scope.png)
+
+
+
 
 ContentType，顾名思义，就是数据类型，在插件开发中，我们一般只能使用CLASSES和RESOURCES两种类型，注意，其中的CLASSES已经包含了class文件和jar文件
+
+
+
+![](/images/transformContentType.png)
+
 
 ```java
 enum DefaultContentType implements ContentType {
@@ -113,6 +122,9 @@ enum DefaultContentType implements ContentType {
 另一个枚举类中，还有一些隐藏类型，比如DEX文件，不过这些只有Android编译器可以使用。可以详见[com.android.build.gradle.internal.pipeline.ExtendedContentType](https://android.googlesource.com/platform/tools/base/+/studio-master-dev/build-system/gradle-core/src/main/java/com/android/build/gradle/internal/pipeline/ExtendedContentType.java?autodive=0%2F%2F%2F)，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的ContentType集合方便开发者使用，而我们字节码处理一般使用`TransformManager.CONTENT_CLASS`
 
 Scope相比ContentType则是另一个维度的过滤规则，
+
+![](/images/transformScope.png)
+
 
 ```java
     enum Scope implements ScopeType {
