@@ -534,9 +534,18 @@ public void transform(TransformInvocation transformInvocation){
 后面做各种模式下的编译速度对比，会发现增量和并发对编译速度的影响是很显著的，而我在查看Android gradle plugin自身的十几个Transform时，发现它们实现方式也有一些区别，有些用kotlin写，有些用java写，有些支持增量，有些不支持，而且是代码注释写了一个大大的FIXME, To support incremental build。所以，讲道理，现阶段的Android编译速度，还是有提升空间的。
 
 
+上面我们介绍了Transform，以及如何高效地在编译期间寻找时机处理所有字节码，那么具体怎么处理字节码呢？接下来来让我们一起来看看JVM平台上的字节码神兵利器，ASM!
 
 
 ## 二、ASM
+
+ASM的官网在这里[https://asm.ow2.io/](https://asm.ow2.io/)，随便贴一下它的主页介绍，一起感受下它的强大
+
+
+![](/images/transform_asm_introduce.png)
+
+
+JVM平台上，处理字节码的框架最常见的就三个，ASM，Javasist，AspectJ。我尝试过Javasist，而AspectJ也稍有了解，最终选择ASM，因为使用它可以更底层地处理字节码的每条命令，处理速度、内存占用，也是优于其他两个框架。
 
 
 
