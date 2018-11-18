@@ -17,17 +17,17 @@ JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernat
 
 字节码相关技术的强大之处不用多说，而且Android开发中，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，所以如果我们在Android开发中，使用字节码技术做一下hack，还可以天然地兼容Java和Kotlin语言，真香。
 
-这篇文章讲介绍字节码技术在Android开发中的应用，主要围绕以下几点展开：
+这篇文章将介绍字节码技术在Android开发中的应用，主要围绕以下几点展开：
 
-+ 如何使用Transform编写一个快速的编译插件，处理所有class/jar
++ Transform的原理与应用
 + 字节码基础知识
-+ ASM的使用与常见的问题
++ ASM的介绍与如何应用到gradle插件中
 + 几个具体应用案例
 
 话不多说，让我们开始吧
 
 
-## 如何使用Transform编写一个快速的编译插件，处理所有class/jar
+## 一、Transform的原理与应用
 
 我们在这里先引出一个概念，就是Android gradle plugin 1.5开始引入的[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)。接下来来让我们一起来好好研究下Transform。
 
@@ -270,7 +270,7 @@ public void createPostCompilationTasks(
 这个方法的脉络很清晰，我们可以看到，Jacoco，Desugar，MergeJavaRes，AdvancedProfiling，Shrinker，Proguard, JarMergeTransform, MultiDex, Dex都是通过Transform的形式一个个串联起来。其中也有将我们自定义的Transform插进去。
 
 
-讲完了Transform的数据流动的原理，再介绍Transform的输入数据的过滤机制，Transform的数据输入，可以通过Scope和ContentType两种方式过滤。
+讲完了Transform的数据流动的原理，再介绍Transform的输入数据的过滤机制，Transform的数据输入，可以通过Scope和ContentType两个维度进行过滤。
 
 ![](/images/transformscope&contenttype.png)
 
@@ -280,7 +280,7 @@ ContentType，顾名思义，就是数据类型，在插件开发中，我们一
 
 ![](/images/transformContentType.png)
 
-从图中可以看到，除了CLASSES和RESOURCES，还有一些我们开发过程无法使用的类型，比如DEX文件，这些隐藏类型在一个独立的枚举类[ExtendedContentType](https://android.googlesource.com/platform/tools/base/+/studio-master-dev/build-system/gradle-core/src/main/java/com/android/build/gradle/internal/pipeline/ExtendedContentType.java?autodive=0%2F%2F%2F)中，这些类型只能给Android编译器使用。另外，我们一般使用[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)中提供的几个常用的ContentType集合和Scope集合，如果是要处理所有class字节码，ContentType我们一般使用`TransformManager.CONTENT_CLASS`。
+从图中可以看到，除了CLASSES和RESOURCES，还有一些我们开发过程无法使用的类型，比如DEX文件，这些隐藏类型在一个独立的枚举类[ExtendedContentType](https://android.googlesource.com/platform/tools/base/+/studio-master-dev/build-system/gradle-core/src/main/java/com/android/build/gradle/internal/pipeline/ExtendedContentType.java?autodive=0%2F%2F%2F)中，这些类型只能给Android编译器使用。另外，我们一般使用[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)中提供的几个常用的ContentType集合和Scope集合，如果是要处理所有class和jar的字节码，ContentType我们一般使用`TransformManager.CONTENT_CLASS`。
 
 
 Scope相比ContentType则是另一个维度的过滤规则，
@@ -288,7 +288,7 @@ Scope相比ContentType则是另一个维度的过滤规则，
 ![](/images/transformScope.png)
 
 
-我们可以发现，也只有左右几个类型可供我们使用，而我们一般都是组合使用上面这几个类型，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的Scope集合方便开发者使用。
+我们可以发现，左边几个类型可供我们使用，而我们一般都是组合使用这几个类型，[TransformManager](https://android.googlesource.com/platform/tools/base/+/gradle_2.0.0/build-system/gradle-core/src/main/groovy/com/android/build/gradle/internal/transforms/ShrinkResourcesTransform.java)有几个常用的Scope集合方便开发者使用。
 如果是要处理所有class字节码，Scope我们一般使用`TransformManager.SCOPE_FULL_PROJECT`。
 
 
@@ -296,16 +296,6 @@ Scope相比ContentType则是另一个维度的过滤规则，
 
 
 ```java
-/**
- * 1、Transform的工作:主要是负责将输入的class（可能来自于class文件和jar文件）运输给下一个Transform，运输过程中
- * 你可以对这些class动动手脚，改改字节码。而Transform的输出路径，通过outputProvider获取
- * 2、Transform输入的来源可以通过Scope的概念指定，
- * 3、Transform输入的具体文件类型可以通过ContentType指定
- * 4、Transform可以指定是否支持增量编译，如果增量编译，每次编译，Android编译系统会告诉当前Transform目前哪些文件发生了变化，以及发生
- * 什么变化。
- * 5、Transform的每个输入，并不一定要输出到下一个Transform，它也可以只获取输入，而不输出。输入其实分为两种，一种是消费型输入，需要输出到下个Transform，
- * 一种是引用型输入，getScope方法返回的就是消费型输入，getReferencedScopes方法返回的就是引用型输入。
- */
 public class CustomTransform extends Transform {
 
     public static final String TAG = "CustomTransform";
@@ -383,10 +373,10 @@ public class CustomTransform extends Transform {
         return true;
     }
 
-	//是否开启增量编译
+	
     @Override 
     public boolean isIncremental() {
-        return true;
+        return true; //是否开启增量编译
     }
 
 }
@@ -398,105 +388,155 @@ public class CustomTransform extends Transform {
 
 ```java
 
-	public synchronized File getContentLocation(
-            @NonNull String name,
-            @NonNull Set<ContentType> types,
-            @NonNull Set<? super Scope> scopes,
-            @NonNull Format format) {
-        // runtime check these since it's (indirectly) called by 3rd party transforms.
-        checkNotNull(name);
-        checkNotNull(types);
-        checkNotNull(scopes);
-        checkNotNull(format);
-        checkState(!name.isEmpty());
-        checkState(!types.isEmpty());
-        checkState(!scopes.isEmpty());
+public synchronized File getContentLocation(
+        @NonNull String name,
+        @NonNull Set<ContentType> types,
+        @NonNull Set<? super Scope> scopes,
+        @NonNull Format format) {
+    // runtime check these since it's (indirectly) called by 3rd party transforms.
+    checkNotNull(name);
+    checkNotNull(types);
+    checkNotNull(scopes);
+    checkNotNull(format);
+    checkState(!name.isEmpty());
+    checkState(!types.isEmpty());
+    checkState(!scopes.isEmpty());
 
-        // search for an existing matching substream.
-        for (SubStream subStream : subStreams) {
-            // look for an existing match. This means same name, types, scopes, and format.
-            if (name.equals(subStream.getName())
-                    && types.equals(subStream.getTypes())
-                    && scopes.equals(subStream.getScopes())
-                    && format == subStream.getFormat()) {
-                return new File(rootFolder, subStream.getFilename());
-            }
+    // search for an existing matching substream.
+    for (SubStream subStream : subStreams) {
+        // look for an existing match. This means same name, types, scopes, and format.
+        if (name.equals(subStream.getName())
+                && types.equals(subStream.getTypes())
+                && scopes.equals(subStream.getScopes())
+                && format == subStream.getFormat()) {
+            return new File(rootFolder, subStream.getFilename());
         }
-		//按位置递增！！	
-        // didn't find a matching output. create the new output
-        SubStream newSubStream = new SubStream(name, nextIndex++, scopes, types, format, true);
-
-        subStreams.add(newSubStream);
-
-        return new File(rootFolder, newSubStream.getFilename());
     }
+	//按位置递增！！	
+    // didn't find a matching output. create the new output
+    SubStream newSubStream = new SubStream(name, nextIndex++, scopes, types, format, true);
+
+    subStreams.add(newSubStream);
+
+    return new File(rootFolder, newSubStream.getFilename());
+}
 
 ```
 
 
 
-到此为止，看起来Transform用起来也不难，但是，如果直接这样使用，会大大拖慢编译时间，为了解决这个问题，摸索了一段时间后，也借鉴了Android编译器中Desugar等几个Transform的实现，发现我们可以使用增量编译，并且上面transform方法遍历处理每个jar/class的流程，其实可以并发处理，加上一般编译流程都是在台式机上，所以我们可以尽量敲诈机器的资源。
+到此为止，看起来Transform用起来也不难，但是，如果直接这样使用，会大大拖慢编译时间，为了解决这个问题，摸索了一段时间后，也借鉴了Android编译器中Desugar等几个Transform的实现，发现我们可以使用增量编译，并且上面transform方法遍历处理每个jar/class的流程，其实可以并发处理，加上一般编译流程都是在PC上，所以我们可以尽量敲诈机器的资源。
+
+想要开启增量编译，我们需要重写Transform的这个接口，返回true。
+
+
+```java
+@Override 
+public boolean isIncremental() {
+    return true;
+}
+
+```
+
+
+开启了支持增量编译后，我们可以在transform方法中，检查当前编译是否是增量编译。
+
+如果不是增量编译，则清空output目录，然后按照前面的方式，逐个class/jar处理
+如果是增量编译，则要检查每个文件的Status，Status分四种，
+
++ NOTCHANGED: 当前文件不需处理，甚至复制操作都不用；
++ ADDED、CHANGED: 正常处理，输出给下一个任务；
++ REMOVED: 移除outputProvider获取路径对应的文件。
+
+大概实现可以一起看看下面的代码
+
+
+```java 
+
+@Override
+public void transform(TransformInvocation transformInvocation){
+    Collection<TransformInput> inputs = transformInvocation.getInputs();
+    TransformOutputProvider outputProvider = transformInvocation.getOutputProvider();
+    boolean isIncremental = transformInvocation.isIncremental();
+    //如果非增量，则清空旧的输出内容
+    if(!isIncremental) {
+        outputProvider.deleteAll();
+    }	
+    for(TransformInput input : inputs) {
+        for(JarInput jarInput : input.getJarInputs()) {
+            Status status = jarInput.getStatus();
+            File dest = outputProvider.getContentLocation(
+                    jarInput.getName(),
+                    jarInput.getContentTypes(),
+                    jarInput.getScopes(),
+                    Format.JAR);
+            if(isIncremental && !emptyRun) {
+                switch(status) {
+                    case NOTCHANGED:
+                        continue;
+                    case ADDED:
+                    case CHANGED:
+                        transformJar(jarInput.getFile(), dest, status);
+                        break;
+                    case REMOVED:
+                        if (dest.exists()) {
+                            FileUtils.forceDelete(dest);
+                        }
+                        break;
+                }
+            } else {
+                transformJar(jarInput.getFile(), dest, status);
+            }
+        }
+
+        for(DirectoryInput directoryInput : input.getDirectoryInputs()) {
+            File dest = outputProvider.getContentLocation(directoryInput.getName(),
+                    directoryInput.getContentTypes(), directoryInput.getScopes(),
+                    Format.DIRECTORY);
+            FileUtils.forceMkdir(dest);
+            if(isIncremental && !emptyRun) {
+                String srcDirPath = directoryInput.getFile().getAbsolutePath();
+                String destDirPath = dest.getAbsolutePath();
+                Map<File, Status> fileStatusMap = directoryInput.getChangedFiles();
+                for (Map.Entry<File, Status> changedFile : fileStatusMap.entrySet()) {
+                    Status status = changedFile.getValue();
+                    File inputFile = changedFile.getKey();
+                    String destFilePath = inputFile.getAbsolutePath().replace(srcDirPath, destDirPath);
+                    File destFile = new File(destFilePath);
+                    switch (status) {
+                        case NOTCHANGED:
+                            break;
+                        case REMOVED:
+                            if(destFile.exists()) {
+                                FileUtils.forceDelete(destFile);
+                            }
+                            break;
+                        case ADDED:
+                        case CHANGED:
+                            FileUtils.touch(destFile);
+                            transformSingleFile(inputFile, destFile, srcDirPath);
+                            break;
+                    }
+                }
+            } else {
+                transformDir(directoryInput.getFile(), dest);
+            }
+
+        }
+    }
+}
+
+```
+
+
+实现了增量编译后，我们最好也支持并发编译，并发编译的实现并不乏咋，只需要将上面处理单个jar/class的逻辑，并发处理，最后阻塞等待所有任务结束即可。
+
+后面做各种模式下的编译速度对比，会发现增量和并发对编译速度的影响是很显著的，而我在查看Android gradle plugin自身的十几个Transform时，发现它们实现方式也有一些区别，有些用kotlin写，有些用java写，有些支持增量，有些不支持，而且是代码注释写了一个大大的FIXME, To support incremental build。所以，讲道理，现阶段的Android编译速度，还是有提升空间的。
 
 
 
 
-
-
-4. Transform可以指定是否支持增量编译，如果增量编译，每次编译，Android编译系统会告诉当前Transform目前哪些文件发生了变化，以及发生
-什么变化。
-
-
-
-
-
-1、Transform的原理
-
-
-Input
-SecondaryInput
-ReferencedInput
-ParameterInput
-
-
-1、Android的编译过程，把Transform应用到什么地方
-2、如何使用自定义Transform
-
-
-
-
-
-首先得让我们来看看Android编译过程，proguard，java 8语法的desugar等等步骤其实都是需要全局处理所有class/jar文件，那么它们是怎么实现的呢？这个时候就需要引入一个概念：[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)，
-
-
-
-
-
-众所周知，JVM平台的语言，它们共同基础都是字节码，而历来JVM平台上的技术，都不乏对字节码操作的场景，
-
-+ 从传统的ORM框架如Hibernate，MyBatis，到比较流行的mock框架，如Mockio，再到JavaEE中长盛不衰的Spring/SprintBoot 框架，背后都有操作字节码的身影。顺便提一句，以上这几个框架基本都使用了cglib这个框架来负责对字节码的处理，而cglib是基于asm实现的。
-
-+ 而除了以上几个框架，很多JVM语言的语法糖，很多都是借助ASM去动态/静态生成字节码的方式实现
-
-+ 再到我们的Android开发中，也不乏操作字节码的身影，而这些大多发生在Android的编译期间，比如lambda语法的[desugar](https://developer.android.com/studio/write/java8-support)过程
-
-操作字节码可以帮我们突破JVM语言本身的很多限制，在代码生成，AOP，性能监控等领域都能起到四两拨千斤的作用。而在Android开发的领域中，我们来探索一下，能否借助字节码技术做一些工具呢？
-
-首先明确我们的目标，我们的目标是*在编译期间，处理所有Android工程中的class文件，jar包文件，甚至资源文件，对其中某些文件进行干预，然后做一些瞒天过海，狸猫换太子的勾当*。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+## 二、ASM
 
 
 
@@ -520,29 +560,5 @@ ParameterInput
 
 
 
-AOP(Aspect-oriented programming)技术在Android应用开发中的应用并不少见，如今也并不神秘，最常见的一个场景是修改/插入字节码，统计每个方法的运行时间，从而更精准地定位卡顿代码，最常见的实现方式就是基于Javasist + Gradle Transform编写一个Android编译插件处理所有class和jar包，另外一个场景是JakeWharton大神的[hugo组件](https://github.com/JakeWharton/hugo)，这个组件是基于AspectJ开发的，能通过为方法添加Annotation从而统计方法的执行时间和打印方法参数。
 
-而这一系列AOP组件基本都存在一些问题，比如，处理字节码速度过慢，编译插件全量处理class，从而导致宿主工程编译时间大大加长。或者有部分class并不能成功注入字节码，或者遇到修改完字节码，后续mergeDex步骤失败，等等问题，不一而足。
-
-
-以上这些问题我近来都踩了个遍并一一解决，并且实现一个通用的编译插件，可以帮助开发者快速编写插件，修改字节码，实现自己想要的AOP功能，并提供了几个基于这个框架实现的几个实用的AOP组件。这篇文章将围绕我的实现思路展开。
-
-开门见山，我的实现思路是基于Gradle Transform和ASM这两种技术，对应地，这篇文章也只分两部分，第一部分介绍Gradle Transform，接受它在Android编译流程中的应用场景，以及它对class，jar，resource等文件的处理机制，如何基于它实现一个快速的编译插件；第二部分介绍ASM，涉及一些基础的JVM知识，以及如何快速编写ASM代码。另外将穿插我遇到过的各种问题以及问题的答案。
-
-
-
-修改字节码的应用场景
-1、mocking 框架
-2、
-
-
-# Transform
-
-要介绍Transform，首先要介绍Android gradle Plugin
-
-
-
-
-
-修改字节码的技术充满想象力，给了我们解决问题的另一个思路，很多性能监控工具，监控内存，UI，数据库，网络等等，基本都是从framework代码入手，通过反射，代理等等hack的方式实现，而究其原因，就是为了突破代码操作权限（比如反射使得访问、修改一个静态变量成为可能），而如果我们直接通过操纵字节码，那么对代码基本获得了最高的权限。
 
