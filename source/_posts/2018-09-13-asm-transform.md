@@ -384,7 +384,8 @@ public class CustomTransform extends Transform {
 
 ```
 
-可以看到，在transform方法中，我们将每个jar包和class文件复制到dest路径，这个dest路径就是下一个Transform的输入数据，而在复制时，我们就可以做一些狸猫换太子，偷天换日的事情了，先将jar包和class文件的字节码做一些修改，再进行复制即可，至于怎么修改字节码，就要借助我们后面介绍的ASM了。而如果开发过程要看你当前transform处理之后的class/jar包，可以到/build/intermediates/transforms/CustomTransform/下查看，你会发现所有jar包命名都是123456递增，这是正常的，这里的命名规则可以在OutputProvider.getContentLocation的具体实现中找到
+可以看到，在transform方法中，我们将每个jar包和class文件复制到dest路径，这个dest路径就是下一个Transform的输入数据，而在复制时，我们就可以做一些狸猫换太子，偷天换日的事情了，先将jar包和class文件的字节码做一些修改，再进行复制即可，至于怎么修改字节码，就要借助我们后面介绍的ASM了。而如果开发过程要看你当前transform处理之后的class/jar包，可以到
+/build/intermediates/transforms/CustomTransform/下查看，你会发现所有jar包命名都是123456递增，这是正常的，这里的命名规则可以在OutputProvider.getContentLocation的具体实现中找到
 
 ```java
 
@@ -529,7 +530,7 @@ public void transform(TransformInvocation transformInvocation){
 ```
 
 
-实现了增量编译后，我们最好也支持并发编译，并发编译的实现并不乏咋，只需要将上面处理单个jar/class的逻辑，并发处理，最后阻塞等待所有任务结束即可。
+实现了增量编译后，我们最好也支持并发编译，并发编译的实现并不复杂，只需要将上面处理单个jar/class的逻辑，并发处理，最后阻塞等待所有任务结束即可。
 
 后面做各种模式下的编译速度对比，会发现增量和并发对编译速度的影响是很显著的，而我在查看Android gradle plugin自身的十几个Transform时，发现它们实现方式也有一些区别，有些用kotlin写，有些用java写，有些支持增量，有些不支持，而且是代码注释写了一个大大的FIXME, To support incremental build。所以，讲道理，现阶段的Android编译速度，还是有提升空间的。
 
@@ -547,6 +548,104 @@ ASM的官网在这里[https://asm.ow2.io/](https://asm.ow2.io/)，随便贴一�
 
 JVM平台上，处理字节码的框架最常见的就三个，ASM，Javasist，AspectJ。我尝试过Javasist，而AspectJ也稍有了解，最终选择ASM，因为使用它可以更底层地处理字节码的每条命令，处理速度、内存占用，也是优于其他两个框架。
 
+我们这部分介绍ASM，但是由于篇幅问题，不会从字节码的基础展开介绍，着重介绍讲ASM的使用，以及应用于Android插件开发时，遇到的问题，及其解决方案。
+
+
+### ASM引入
+
+下面是一份完整的gradle自定义plugin + transform + asm所需依赖，注意一下，此处两个gradleApi的区别
+
+```gradle 
+
+dependencies {
+
+    //使用项目中指定的gradle wrapper版本，插件中使用的Project对象等等就来自这里
+    implementation gradleApi()     
+
+    //使用本地的groovy
+    implementation localGroovy()   
+
+    //Android编译的大部分gradle源码，比如上面讲到的TaskManager
+    implementation 'com.android.tools.build:gradle:3.1.4'    
+
+    //这个依赖里其实主要存了transform的依赖，注意，这个依赖不同于上面的gradleApi()
+    implementation 'com.android.tools.build:gradle-api:3.1.4'   
+
+    //ASM相关
+    implementation 'org.ow2.asm:asm:5.1'                        
+    implementation 'org.ow2.asm:asm-util:5.1'                    
+    implementation 'org.ow2.asm:asm-commons:5.1'                 
+}
+
+
+```
+
+
+### ASM的API类型
+
+
+ASM设计了两种API类型，一种是Tree API, 一种是基于Visitor API(visitor pattern)，
+
+Tree API将class的结构读取到内存，构建一个树形结构，然后需要处理Method、Field等元素时，到树形结构中定位到某个元素，进行操作，然后把操作再写入新的class文件。
+
+Visitor API则将通过接口的方式，分离读class和写class的逻辑，一般通过一个ClassReader负责读取class字节码，然后会通过一个ClassReader通过一个ClassVisitor接口，将字节码的每个细节传递给ClassVisitor（你会发现ClassVisitor中有多个visitXXXX接口），这个过程就像ClassReader带着ClassVisitor游览了class字节码的每一个语句，ClassVisitor默认行为是将接受到的数据构建出新的class，而我们可以在每一处visitXXX的接口做一些自己的事情，这就达到修改字节码的目的。
+
+
+
+
+### getCommonSuperClass 
+
+ClassWriter中有这么一个方法getCommonSuperClass，用于寻找两个类的共同父类，我们可以看到它是获取当前class的classLoader加载两个输入的类型，
+而编译期间使用的classloader并没有加载Android项目中的代码，所以我们需要一个自定义的ClassLoader，
+
+
+
+
+```java
+
+/**
+ * Returns the common super type of the two given types. The default
+ * implementation of this method <i>loads</i> the two given classes and uses
+ * the java.lang.Class methods to find the common super class. It can be
+ * overridden to compute this common super type in other ways, in particular
+ * without actually loading any class, or to take into account the class
+ * that is currently being generated by this ClassWriter, which can of
+ * course not be loaded since it is under construction.
+ * 
+ * @param type1
+ *            the internal name of a class.
+ * @param type2
+ *            the internal name of another class.
+ * @return the internal name of the common super class of the two given
+ *         classes.
+ */
+protected String getCommonSuperClass(final String type1, final String type2) {
+    Class<?> c, d;
+    ClassLoader classLoader = getClass().getClassLoader();
+    try {
+        c = Class.forName(type1.replace('/', '.'), false, classLoader);
+        d = Class.forName(type2.replace('/', '.'), false, classLoader);
+    } catch (Exception e) {
+        throw new RuntimeException(e.toString());
+    }
+    if (c.isAssignableFrom(d)) {
+        return type1;
+    }
+    if (d.isAssignableFrom(c)) {
+        return type2;
+    }
+    if (c.isInterface() || d.isInterface()) {
+        return "java/lang/Object";
+    } else {
+        do {
+            c = c.getSuperclass();
+        } while (!c.isAssignableFrom(d));
+        return c.getName().replace('.', '/');
+    }
+}
+
+
+```
 
 
 
