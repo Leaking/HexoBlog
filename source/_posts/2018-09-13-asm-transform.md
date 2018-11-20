@@ -5,37 +5,39 @@ tags: Android, JVM
 ---
 
 作为Android开发，
+
 是否也曾这样想，要对全局所有class插桩，做UI，内存，网络等等方面性能监控;
+
 是否也曾这样想，某个第三方依赖，用得不爽，但是不想拿它的源码修改再重新编译，而想对它的class直接做点手脚，比如给Okhttp加一个全局的Interceptor，监控流量？
+
 是否也曾这样想，每次写打log时，想让TAG自动生成，让它默认就是当前类的名称，甚至你想让log里自动加上当前代码所在的行数，当同个class中有多行相同日志时，才容易定位日志;
+
 是否也曾这样想，Java自带的动态代理太弱了，只能对接口类做动态代理，而我们想对任何类做动态代理;
 
-为了实现上面这些猜想，可能我们最开始的第一反应，都是能否通过代码生成技术来实现，或者反射、或者动态代理来实现，但是想来想去，APT什么的，貌似不能满足上面的需求，而且，以上这些问题都不能从Java文件入手，而应该从class文件寻找突破。而从class文件入手，我们就不得不来近距离接触一下字节码！
+为了实现上面这些想法，可能我们最开始的第一反应，都是能否通过代码生成技术、APT来实现呢，抑或反射、抑或动态代理来实现，但是想来想去，貌似这些方案都不能很好满足上面的需求，而且，以上这些问题都不能从Java文件入手，而应该从class文件寻找突破。而从class文件入手，我们就不得不来近距离接触一下字节码！
 
-JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中长盛不衰的Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，还有大名鼎鼎的[cglib](https://github.com/cglib/cglib)项目，都有字节码的身影。
+JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中的常青树，Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，还有大名鼎鼎的[cglib](https://github.com/cglib/cglib)项目，都有字节码的身影。
 
-字节码相关技术的强大之处不用多说，而且Android开发中，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，所以如果我们在Android开发中，使用字节码技术做一下hack，还可以天然地兼容Java和Kotlin语言，真香。
+字节码相关技术的强大之处不用多说，而且Android开发中，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，所以如果我们在Android开发中，使用字节码技术做一下hack，还可以天然地兼容Java和Kotlin语言。
 
-近来我对字节码技术在Android上的应用做了一些研究，顺便做了一个小轮子，其中涵盖了几个东西。
+近来我对字节码技术在Android上的应用做了一些研究，顺便做了几个小轮子，项目地址：[Hunter](https://github.com/Leaking/Hunter)
 
-
- + 一个快速、并发、增量的开发字节码插件的框架，帮开发隐藏了Transform和ASM的绝大部分逻辑，开发者只需写少量的ASM code
+ + Hunter: 一个快速、并发、增量的开发字节码插件的框架，帮助开发人员隐藏了Transform和ASM的绝大部分逻辑，开发者只需写少量的ASM code
 
 在上面框架基础上，自己开发了几个小工具
 
 
  + [OkHttp-Plugin](#okhttp-plugin): 可以为你的应用所有的OkhttpClient设置全局 [Interceptor](https://github.com/square/okhttp/wiki/Interceptors) / [Eventlistener](https://github.com/square/okhttp/wiki/Events) 
 (包括第三方依赖里的OkhttpClient)
- + [Timing-Plugin](#timing-plugin): 帮你监控所有UI线程的执行耗时，并且提供了算法，帮你打印出一个带有每步耗时的堆栈，统计卡顿方法分布
+ + [Timing-Plugin](#timing-plugin): 帮你监控所有UI线程的执行耗时，并且提供了算法，帮你打印出一个带有每步耗时的堆栈，统计卡顿方法分布，你也可以自定义分析卡顿堆栈的方式。
  + [LogLine-Plugin](#logline-plugin): 为你的日志加上行号
- + [Debug-Plugin](#debug-plugin): 只要为指定方法加上某个annotation，就可以帮你打印出这个方法所有输入参数的值，以及返回值，执行时间(JakeWharton的[hugo](https://github.com/JakeWharton/hugo)
-用AspectJ实现了类似功能, 而我的实现方式是基于ASM，ASM处理字节码的速度更快)
+ + [Debug-Plugin](#debug-plugin): 只要为指定方法加上某个annotation，就可以帮你打印出这个方法所有输入参数的值，以及返回值，执行时间(JakeWharton的[hugo](https://github.com/JakeWharton/hugo)用AspectJ实现了类似功能, 而我的实现方式是基于ASM，ASM处理字节码的速度更快)
  + 你可以在这里查看我想继续开发的一些插件 [TODO](https://github.com/Leaking/Hunter/blob/master/TODO.md)，另外，欢迎你提供你宝贵的idea
 
 
 写这篇文章目的：一来是推广我的小作品，二来是记录开发过程中的技术点滴。
 
-这篇文章将介绍字节码技术在Android开发中的应用，主要围绕以下几点展开：
+这个项目主要使用的技术是Android gradle插件，Transform，ASM与字节码基础。这篇文章将主要围绕以下几个技术点展开：
 
 + Transform的应用、原理、优化
 + ASM的应用，开发流，以及与Android工程的适配
@@ -50,7 +52,7 @@ JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernat
 ## 引入Transform
 
 
-我们在这里先引出一个概念，就是Android gradle plugin 1.5开始引入的[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)。接下来来让我们一起来好好研究下Transform。
+我们在这里先引出一个概念，就是Android gradle plugin 1.5开始引入的[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)。
 
 我们先从如何引入Transform依赖说起，首先我们需要编写一个自定义插件，然后在插件中注册一个自定义Transform。这其中我们需要先通过gradle引入Transform的依赖，这里有一个坑，Transform的库最开始是独立的，后来从2.0.0版本开始，被归入了Android编译系统依赖的gradle-api中，让我们看看Transform在[jcenter](https://dl.bintray.com/android/android-tools/com/android/tools/build/transform-api/)上的历个版本。
 
@@ -91,14 +93,14 @@ public class CustomPlugin implements Plugin<Project> {
 
 ## Transform的原理与应用
 
-接下来介绍Transform，介绍怎么用它之前，先介绍一下它的原理，一图胜千言，请看图
+接下来介绍Transform的原理，一图胜千言
 
 
 ![](/images/transformconsume_transform.png)
 
 
 
-从图中可知，每个Transform其实都是一个gradle task，Android编译器将每个Transform串连起来，第一个Transform接收来自javac编译class的结果，以及已经拉取到在本地的第三方依赖（jar. aar），还有resource资源，注意，这里的resource并非res资源，而是asset目录下的资源。这些编译的中间产物，在Transform组成的链条上流动，每个Transform节点可以对class进行处理再传递给下一个Transform。我们常见的混淆，Desugar等逻辑，它们的实现如今都是封装在一个个Transform中，而我们自定义的Transform，会插入到这个Transform链条的最前面。
+每个Transform其实都是一个gradle task，Android编译器中的TaskManager将每个Transform串连起来，第一个Transform接收来自javac编译的结果，以及已经拉取到在本地的第三方依赖（jar. aar），还有resource资源，注意，这里的resource并非android项目中的res资源，而是asset目录下的资源。这些编译的中间产物，在Transform组成的链条上流动，每个Transform节点可以对class进行处理再传递给下一个Transform。我们常见的混淆，Desugar等逻辑，它们的实现如今都是封装在一个个Transform中，而我们自定义的Transform，会插入到这个Transform链条的最前面。
 
 
 但其实，上面这幅图，只是展示Transform的其中一种情况。而Transform其实可以有两种输入，一种是消费型的，当前Transform需要将消费型型输出给下一个Transform，另一种是引用型的，当前Transform可以读取这些输入，而不需要输出给下一个Transform，比如Instant Run就是通过这种方式，检查两次编译之间的diff的。至于怎么在一个Transform中声明两种输入，以及怎么处理两种输入，后面将有示例代码。
