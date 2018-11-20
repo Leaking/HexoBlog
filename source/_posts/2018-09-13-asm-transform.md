@@ -5,7 +5,6 @@ tags: Android, JVM
 ---
 
 作为Android开发，
-
 是否也曾这样想，要对全局所有class插桩，做UI，内存，网络等等方面性能监控;
 是否也曾这样想，某个第三方依赖，用得不爽，但是不想拿它的源码修改再重新编译，而想对它的class直接做点手脚，比如给Okhttp加一个全局的Interceptor，监控流量？
 是否也曾这样想，每次写打log时，想让TAG自动生成，让它默认就是当前类的名称，甚至你想让log里自动加上当前代码所在的行数，当同个class中有多行相同日志时，才容易定位日志;
@@ -19,15 +18,14 @@ JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernat
 
 这篇文章将介绍字节码技术在Android开发中的应用，主要围绕以下几点展开：
 
-+ Transform的原理与应用
-+ 字节码基础知识
-+ ASM的介绍与如何应用到gradle插件中
++ Transform的应用、原理、优化
++ ASM的应用，开发流，以及与Android工程的适配
 + 几个具体应用案例
 
 话不多说，让我们开始吧
 
 
-## 一、Transform的原理与应用
+# 一、Transform
 
 我们在这里先引出一个概念，就是Android gradle plugin 1.5开始引入的[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)。接下来来让我们一起来好好研究下Transform。
 
@@ -538,20 +536,20 @@ public void transform(TransformInvocation transformInvocation){
 上面我们介绍了Transform，以及如何高效地在编译期间寻找时机处理所有字节码，那么具体怎么处理字节码呢？接下来来让我们一起来看看JVM平台上的字节码神兵利器，ASM!
 
 
-## 二、ASM
+# 二、ASM
 
-ASM的官网在这里[https://asm.ow2.io/](https://asm.ow2.io/)，随便贴一下它的主页介绍，一起感受下它的强大
+ASM的官网在这里[https://asm.ow2.io/](https://asm.ow2.io/)，贴一下它的主页介绍，一起感受下它的强大
 
 
 ![](/images/transform_asm_introduce.png)
 
 
-JVM平台上，处理字节码的框架最常见的就三个，ASM，Javasist，AspectJ。我尝试过Javasist，而AspectJ也稍有了解，最终选择ASM，因为使用它可以更底层地处理字节码的每条命令，处理速度、内存占用，也是优于其他两个框架。
+JVM平台上，处理字节码的框架最常见的就三个，ASM，Javasist，AspectJ。我尝试过Javasist，而AspectJ也稍有了解，最终选择ASM，因为使用它可以更底层地处理字节码的每条命令，处理速度、内存占用，也优于其他两个框架。
 
 我们这部分介绍ASM，但是由于篇幅问题，不会从字节码的基础展开介绍，着重介绍讲ASM的使用，以及应用于Android插件开发时，遇到的问题，及其解决方案。
 
 
-### ASM引入
+## ASM引入
 
 下面是一份完整的gradle自定义plugin + transform + asm所需依赖，注意一下，此处两个gradleApi的区别
 
@@ -574,29 +572,272 @@ dependencies {
     //ASM相关
     implementation 'org.ow2.asm:asm:5.1'                        
     implementation 'org.ow2.asm:asm-util:5.1'                    
-    implementation 'org.ow2.asm:asm-commons:5.1'                 
+    implementation 'org.ow2.asm:asm-commons:5.1'   
+                  
 }
 
 
 ```
 
 
-### ASM的API类型
+### ASM使用
 
 
 ASM设计了两种API类型，一种是Tree API, 一种是基于Visitor API(visitor pattern)，
 
 Tree API将class的结构读取到内存，构建一个树形结构，然后需要处理Method、Field等元素时，到树形结构中定位到某个元素，进行操作，然后把操作再写入新的class文件。
 
-Visitor API则将通过接口的方式，分离读class和写class的逻辑，一般通过一个ClassReader负责读取class字节码，然后会通过一个ClassReader通过一个ClassVisitor接口，将字节码的每个细节传递给ClassVisitor（你会发现ClassVisitor中有多个visitXXXX接口），这个过程就像ClassReader带着ClassVisitor游览了class字节码的每一个语句，ClassVisitor默认行为是将接受到的数据构建出新的class，而我们可以在每一处visitXXX的接口做一些自己的事情，这就达到修改字节码的目的。
+Visitor API则将通过接口的方式，分离读class和写class的逻辑，一般通过一个ClassReader负责读取class字节码，然后会ClassReader通过一个ClassVisitor接口，将字节码的每个细节传递给ClassVisitor（你会发现ClassVisitor中有多个visitXXXX接口），这个过程就像ClassReader带着ClassVisitor游览了class字节码的每一个指令，ClassVisitor默认行为是将接受到的数据构建出新的class，而我们可以在每一处visitXXX的接口做一些自己的事情，这就达到修改字节码的目的。
+
+
+上面这两种解析文件结构的方式在很多处理结构化数据时都常见，一般得看需求背景选择合适的方案，而我们的需求是这样的，某个目的，寻找class文件中的一个hook点，进行字节码修改，这种背景下，我们选择Visitor API的方式比较合适。
+
+让我们来写一个简单的demo，复制一个class文件
+
+
+```java
+
+private void copy(String inputPath, String outputPath) {
+    try {
+        FileInputStream is = new FileInputStream(inputPath);
+        ClassReader cr = new ClassReader(is);
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+        cr.accept(cw, 0);
+        FileOutputStream fos = new FileOutputStream(outputPath);
+        fos.write(cw.toByteArray());
+        fos.close();
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}
+
+```
+首先，我们通过ClassReader读取某个class文件，然后定义一个ClassWriter，这个ClassWriter我们可以看它源码，其实就是一个ClassVisitor的实现，负责将ClassReader传递过来的数据写到一个字节流中，而真正触发这个逻辑就是通过ClassWriter的accept方式。
+
+
+```java
+
+public void accept(ClassVisitor classVisitor, Attribute[] attributePrototypes, int parsingOptions) {
+    
+    // 读取当前class的字节码信息
+    int accessFlags = this.readUnsignedShort(currentOffset);
+    String thisClass = this.readClass(currentOffset + 2, charBuffer);
+    String superClass = this.readClass(currentOffset + 4, charBuffer);
+    String[] interfaces = new String[this.readUnsignedShort(currentOffset + 6)];
+
+    
+    
+    //classVisitor就是刚才accept方法传进来的ClassWriter，每次visitXXX都负责将字节码的信息存储起来
+    classVisitor.visit(this.readInt(this.cpInfoOffsets[1] - 7), accessFlags, thisClass, signature, superClass, interfaces);
+    
+    /**
+        略去很多visit逻辑
+    */
+
+    //visit Attribute
+    while(attributes != null) {
+        Attribute nextAttribute = attributes.nextAttribute;
+        attributes.nextAttribute = null;
+        classVisitor.visitAttribute(attributes);
+        attributes = nextAttribute;
+    }
+
+    /**
+        略去很多visit逻辑
+    */
+
+    classVisitor.visitEnd();
+}
+
+
+```
 
 
 
 
-### getCommonSuperClass 
+最后，我们通过ClassWriter的toByteArray()，将从ClassReader传递到ClassWriter的字节码导出，写入新的文件即可。这就完成了class文件的复制，这个demo虽然很简单，但是涵盖了使用ASM使用Visitor API修改字节码最底层的原理，大致流程如图
 
-ClassWriter中有这么一个方法getCommonSuperClass，用于寻找两个类的共同父类，我们可以看到它是获取当前class的classLoader加载两个输入的类型，
-而编译期间使用的classloader并没有加载Android项目中的代码，所以我们需要一个自定义的ClassLoader，
+![](/images/transform_ASM-1.png)
+
+
+我们来分析一下，不难发现，如果我们要修改字节码，就是要从ClassWriter入手，上面我们提到ClassWriter中每个visitXXX（这些接口实现自ClassVisitor）都会保存字节码信息并最终可以导出，那么如果我们可以代理ClassWriter的接口，就可以干预最终字节码的生成了。
+
+那么上面的图就应该是这样
+
+![](/images/transform_ASM-2.png)
+
+
+我们只要稍微看一下ClassVisitor的代码，发现它的构造函数，是可以接收另一个ClassVisitor的，从通过这个ClassVisitor代理所有的方法。让我们来看一个例子，为class中的每个方法的开头和结尾都插入一行代码，打印当前方法的名字。
+
+修改前的方法是这样
+
+```java
+
+private static void printTwo() {
+    printOne();
+    printOne();
+}   
+
+```
+
+被修改后的方法是这样
+
+
+```java
+
+private static void printTwo() {
+    System.out.println("CALL printOne");
+    printOne();
+    System.out.println("RETURN printOne");
+    System.out.println("CALL printOne");
+    printOne();
+    System.out.println("RETURN printOne");
+}
+
+```
+
+让我们来看一下如何用ASM实现
+
+```java
+private static void weave(String inputPath, String outputPath) {
+    try {
+        FileInputStream is = new FileInputStream(inputPath);
+        ClassReader cr = new ClassReader(is);
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+        CallClassAdapter adapter = new CallClassAdapter(cw);
+        cr.accept(adapter, 0);
+        FileOutputStream fos = new FileOutputStream(outputPath);
+        fos.write(cw.toByteArray());
+        fos.close();
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}
+
+```
+
+这段代码和上面的实现复制class的代码唯一区别就是，使用了CallClassAdapter，它是一个自定义的ClassVisitor，我们将ClassWriter传递给CallClassAdapter的构造函数。来看看它的实现
+
+```java
+
+//CallClassAdapter.java
+public class CallClassAdapter extends ClassVisitor implements Opcodes {
+
+    public CallClassAdapter(final ClassVisitor cv) {
+        super(ASM5, cv);
+    }
+
+    @Override
+    public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+        super.visit(version, access, name, signature, superName, interfaces);
+    }
+
+    @Override
+    public MethodVisitor visitMethod(final int access, final String name,
+                                     final String desc, final String signature, final String[] exceptions) {
+        MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
+        return mv == null ? null : new CallMethodAdapter(name, mv);
+    }
+
+}
+
+//CallMethodAdapter.java
+class CallMethodAdapter extends MethodVisitor implements Opcodes {
+
+    public CallMethodAdapter(final MethodVisitor mv) {
+        super(ASM5, mv);
+    }
+
+    @Override
+    public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+
+        mv.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
+        mv.visitLdcInsn("CALL " + name);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+
+        mv.visitMethodInsn(opcode, owner, name, desc, itf);
+
+        mv.visitFieldInsn(Opcodes.GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
+        mv.visitLdcInsn("RETURN " + name);
+        mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+
+    }
+
+    @Override
+    public void visitParameter(String name, int access) {
+        System.out.println("name " + name);
+        super.visitParameter(name, access);
+    }
+}
+
+```
+
+CallClassAdapter中的visitMethod使用了一个自定义的MethodVisitor-----CallMethodAdapter，它也是代理了原来的MethodVisitor，原理和ClassVisitor的代理一样。
+
+看到这里，貌似使用ASM修改字节码的大概套路都走完了，那么如何写出上面插入打印方法名的逻辑，这就需要一些字节码的基础知识了，我们说过这里不会展开介绍字节码，但是我们可以介绍一些快速学习字节码的方式，同时也是开发字节码相关工程一些实用的工具。
+
+先从行号开始吧
+
+## 如何验证行号
+
+上面我们给每一句方法调用的前后都插入了一行日志打印，那么有没有想过，这样岂不是打乱了代码的行数，这样，万一crash了，定位堆栈岂不是乱套了。其实并不然，在上面visitMethodInsn中做的东西，其实都是在同一行中插入的代码，上面我们贴出来的代码是这样
+
+```java
+
+private static void printTwo() {
+    System.out.println("CALL printOne");
+    printOne();
+    System.out.println("RETURN printOne");
+    System.out.println("CALL printOne");
+    printOne();
+    System.out.println("RETURN printOne");
+}
+
+```
+
+无论你用idea还是eclipse打开上面的class文件，都是一行行展示的，但是其实class内部真实的行数应该是这样
+
+```java
+
+private static void printTwo() {
+    System.out.println("CALL printOne"); printOne(); System.out.println("RETURN printOne");
+    System.out.println("CALL printOne"); printOne(); System.out.println("RETURN printOne");
+}
+
+```
+
+idea下可以开启一个选项，让查看class内容时，保留真正的行数
+
+看起反编译保留行号后，你看到的是这样
+
+![](/images/transform_line_2.png)
+
+
+开启之前是这样
+
+![](/images/transform_line_1.png)
+
+那么如何开启这个选项呢？Mac下`cmd + shift + A`输入Registry，勾选这两个选项
+
+![](/images/transform_line_3.png)
+
+
+
+## ASM code
+
+我们如果要对某个class进行修改，那需要对字节码做什么修改呢？最直观的方法就是，先编译生成目标class，然后看它的字节码和原来class的字节码有什么区别（查看字节码可以查阅javap工具），但是这样还不够，其实我们最终并不是读写字节码，而是使用ASM来修改，我们这里先做一个区别，bytecode vs ASM code，前者就是JVM意义的字节码，而后者是用ASM描述的bytecode，其实二者非常的接近，只是ASM code用Java代码来描述。所以，我们最好是对比ASM code，而不是对比bytecode。ASM code的区别，就是我们要做的修改。
+
+而ASM也提供了一个这样的类：ASMifier，它可以生成ASM code，但是，其实还有更快捷的工具，Intellij IDEA有一个插件
+[Asm Bytecode Outline](https://plugins.jetbrains.com/plugin/5918-asm-bytecode-outline)，可以查看一个class文件的bytecode和ASM code。
+
+
+到此为止，貌似使用对比ASM code的方式，来实现字节码修改也不难，但是，这种方式只是可以实现一些修改字节码的基础场景，还有很多场景是需要对字节码有一些基础知识才能做到，而且，要阅读懂ASM code，也是需要一定字节码的的知识。所以，如果要开发字节码工程，还是需要学习一番字节码。
+
+
+## ClassWriter在Android上的坑
+
+如果我们直接按上面的套路，将ASM应用到Android编译插件中，会踩到一个坑，这个坑来自于ClassWriter，具体是因为其中的一个逻辑，寻找两个类的共同父类。可以看看ClassWriter中的这个方法getCommonSuperClass，
+
 
 
 
@@ -648,22 +889,206 @@ protected String getCommonSuperClass(final String type1, final String type2) {
 ```
 
 
+这个方法用于寻找两个类的共同父类，我们可以看到它是获取当前class的classLoader加载两个输入的类型，而编译期间使用的classloader并没有加载Android项目中的代码，所以我们需要一个自定义的ClassLoader，将前面提到的Transform中接收到的所有jar以及class，还有android.jar添加到自定义ClassLoader中。
+
+如下
+
+```java
+
+public static URLClassLoader getClassLoader(Collection<TransformInput> inputs,
+                                            Collection<TransformInput> referencedInputs,
+                                            Project project) throws MalformedURLException {
+    ImmutableList.Builder<URL> urls = new ImmutableList.Builder<>();
+    String androidJarPath  = getAndroidJarPath(project);
+    File file = new File(androidJarPath);
+    URL androidJarURL = file.toURI().toURL();
+    urls.add(androidJarURL);
+    for (TransformInput totalInputs : Iterables.concat(inputs, referencedInputs)) {
+        for (DirectoryInput directoryInput : totalInputs.getDirectoryInputs()) {
+            if (directoryInput.getFile().isDirectory()) {
+                urls.add(directoryInput.getFile().toURI().toURL());
+            }
+        }
+        for (JarInput jarInput : totalInputs.getJarInputs()) {
+            if (jarInput.getFile().isFile()) {
+                urls.add(jarInput.getFile().toURI().toURL());
+            }
+        }
+    }
+    ImmutableList<URL> allUrls = urls.build();
+    URL[] classLoaderUrls = allUrls.toArray(new URL[allUrls.size()]);
+    return new URLClassLoader(classLoaderUrls);
+}
+
+```
+
+但是，如果只是替换了getCommonSuperClass中的Classloader，依然还有一个更深的坑，我们可以看到前面getCommonSuperClass的实现是如何寻找父类的，它是通过Class.forName加载某个类，然后再去寻找父类，但是，但是，android.jar中的类可不能随随便便加载的呀，android.jar对于Android工程来说只是编译时依赖，运行时是用Android机器上自己的android.jar。而且android.jar所有方法包括构造函数都是空实现，其中都只有一行代码
+
+```java
+throw new RuntimeException("Stub!");
+```
+
+这样加载某个类时，它的静态域就会被触发，而如果有一个static的变量刚好在声明时被初始化，而初始化中只有一个RuntimeException，此时就会抛异常。
+
+所以，我们不能通过这种方式来获取父类，能否通过不需要加载class就能获取它的父类的方式呢？谜底就在眼前，父类其实也是一个class的字节码中的一项数据，那么我们就从字节码中查询它的。最终实现是这样。
 
 
+```java
 
-1、ASM是啥
-2、修改class的时机是啥，介绍transform，以及目前Android编译流程中的几个transform
-3、重点，大篇幅，，介绍transform的并发，增量
-4，解决asm获取android.jar等等坑，凸显hunter为开发者解决了哪些问题
-4、速度对比
-5、介绍这个hunter transform
-6，介绍字节码基础知识（你波浪式，几个操作符）
-7，介绍asm基础
-8，介绍行号问题，ASM反编译插件
-9，介绍四个插件
-10，AOP监控
-11，增强依赖库的两种方式，1修改实现内容，2修改调用入口（狸猫换太子）
-12，DEBUG工具，获取函数入参名的办法
+public class ExtendClassWriter extends ClassWriter {
+
+    public static final String TAG = "ExtendClassWriter";
+
+    private static final String OBJECT = "java/lang/Object";
+
+    private ClassLoader urlClassLoader;
+
+    public ExtendClassWriter(ClassLoader urlClassLoader, int flags) {
+        super(flags);
+        this.urlClassLoader = urlClassLoader;
+    }
+
+    @Override
+    protected String getCommonSuperClass(final String type1, final String type2) {
+        if (type1 == null || type1.equals(OBJECT) || type2 == null || type2.equals(OBJECT)) {
+            return OBJECT;
+        }
+
+        if (type1.equals(type2)) {
+            return type1;
+        }
+
+        ClassReader type1ClassReader = getClassReader(type1);
+        ClassReader type2ClassReader = getClassReader(type2);
+        if (type1ClassReader == null || type2ClassReader == null) {
+            return OBJECT;
+        }
+
+        if (isInterface(type1ClassReader)) {
+            String interfaceName = type1;
+            if (isImplements(interfaceName, type2ClassReader)) {
+                return interfaceName;
+            }
+            if (isInterface(type2ClassReader)) {
+                interfaceName = type2;
+                if (isImplements(interfaceName, type1ClassReader)) {
+                    return interfaceName;
+                }
+            }
+            return OBJECT;
+        }
+
+        if (isInterface(type2ClassReader)) {
+            String interfaceName = type2;
+            if (isImplements(interfaceName, type1ClassReader)) {
+                return interfaceName;
+            }
+            return OBJECT;
+        }
+
+        final Set<String> superClassNames = new HashSet<String>();
+        superClassNames.add(type1);
+        superClassNames.add(type2);
+
+        String type1SuperClassName = type1ClassReader.getSuperName();
+        if (!superClassNames.add(type1SuperClassName)) {
+            return type1SuperClassName;
+        }
+
+        String type2SuperClassName = type2ClassReader.getSuperName();
+        if (!superClassNames.add(type2SuperClassName)) {
+            return type2SuperClassName;
+        }
+
+        while (type1SuperClassName != null || type2SuperClassName != null) {
+            if (type1SuperClassName != null) {
+                type1SuperClassName = getSuperClassName(type1SuperClassName);
+                if (type1SuperClassName != null) {
+                    if (!superClassNames.add(type1SuperClassName)) {
+                        return type1SuperClassName;
+                    }
+                }
+            }
+
+            if (type2SuperClassName != null) {
+                type2SuperClassName = getSuperClassName(type2SuperClassName);
+                if (type2SuperClassName != null) {
+                    if (!superClassNames.add(type2SuperClassName)) {
+                        return type2SuperClassName;
+                    }
+                }
+            }
+        }
+
+        return OBJECT;
+    }
+
+    private boolean isImplements(final String interfaceName, final ClassReader classReader) {
+        ClassReader classInfo = classReader;
+
+        while (classInfo != null) {
+            final String[] interfaceNames = classInfo.getInterfaces();
+            for (String name : interfaceNames) {
+                if (name != null && name.equals(interfaceName)) {
+                    return true;
+                }
+            }
+
+            for (String name : interfaceNames) {
+                if(name != null) {
+                    final ClassReader interfaceInfo = getClassReader(name);
+                    if (interfaceInfo != null) {
+                        if (isImplements(interfaceName, interfaceInfo)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            final String superClassName = classInfo.getSuperName();
+            if (superClassName == null || superClassName.equals(OBJECT)) {
+                break;
+            }
+            classInfo = getClassReader(superClassName);
+        }
+
+        return false;
+    }
+
+    private boolean isInterface(final ClassReader classReader) {
+        return (classReader.getAccess() & Opcodes.ACC_INTERFACE) != 0;
+    }
+
+
+    private String getSuperClassName(final String className) {
+        final ClassReader classReader = getClassReader(className);
+        if (classReader == null) {
+            return null;
+        }
+        return classReader.getSuperName();
+    }
+
+    private ClassReader getClassReader(final String className) {
+        InputStream inputStream = urlClassLoader.getResourceAsStream(className + ".class");
+        try {
+            if (inputStream != null) {
+                return new ClassReader(inputStream);
+            }
+        } catch (IOException ignored) {
+        } finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+        return null;
+    }
+}
+
+```
+
 
 
 
