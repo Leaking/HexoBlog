@@ -18,14 +18,13 @@ tags: Android, JVM
 
 JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中的常青树，Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，还有大名鼎鼎的[cglib](https://github.com/cglib/cglib)项目，都有字节码的身影。
 
-字节码相关技术的强大之处不用多说，而且Android开发中，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，所以如果我们在Android开发中，使用字节码技术做一下hack，还可以天然地兼容Java和Kotlin语言。
+字节码相关技术的强大之处自然不用多说，而且在Android开发中，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，所以如果我们在Android开发中，使用字节码技术做一下hack，还可以天然地兼容Java和Kotlin语言。
 
 近来我对字节码技术在Android上的应用做了一些研究，顺便做了几个小轮子，项目地址：[Hunter](https://github.com/Leaking/Hunter)
 
- + Hunter: 一个快速、并发、增量的开发字节码插件的框架，帮助开发人员隐藏了Transform和ASM的绝大部分逻辑，开发者只需写少量的ASM code
++ Hunter: 一个插件框架，在这基础上可以快速开发一个并发、增量的字节码编译插件，帮助开发人员隐藏了Transform和ASM的绝大部分逻辑，开发者只需写少量的ASM code，就可以开发一款编译插件，修改Android项目的字节码。
 
 在上面框架基础上，自己开发了几个小工具
-
 
  + [OkHttp-Plugin](#okhttp-plugin): 可以为你的应用所有的OkhttpClient设置全局 [Interceptor](https://github.com/square/okhttp/wiki/Interceptors) / [Eventlistener](https://github.com/square/okhttp/wiki/Events) 
 (包括第三方依赖里的OkhttpClient)
@@ -35,7 +34,7 @@ JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernat
  + 你可以在这里查看我想继续开发的一些插件 [TODO](https://github.com/Leaking/Hunter/blob/master/TODO.md)，另外，欢迎你提供你宝贵的idea
 
 
-写这篇文章目的：一来是推广我的小作品，二来是记录开发过程中的技术点滴。
+今天写这篇文章，记录开发过程中的技术点滴。
 
 这个项目主要使用的技术是Android gradle插件，Transform，ASM与字节码基础。这篇文章将主要围绕以下几个技术点展开：
 
@@ -89,11 +88,12 @@ public class CustomPlugin implements Plugin<Project> {
 }
 
 ```
+那么如何写一个自定义Transform呢？
 
 
 ## Transform的原理与应用
 
-接下来介绍Transform的原理，一图胜千言
+介绍如何应用Transform之前，我们先介绍Transform的原理，一图胜千言
 
 
 ![](/images/transformconsume_transform.png)
@@ -257,7 +257,7 @@ public synchronized File getContentLocation(
             return new File(rootFolder, subStream.getFilename());
         }
     }
-	//按位置递增！！	
+    //按位置递增！！	
     // didn't find a matching output. create the new output
     SubStream newSubStream = new SubStream(name, nextIndex++, scopes, types, format, true);
 
@@ -376,6 +376,29 @@ public void transform(TransformInvocation transformInvocation){
 
 
 实现了增量编译后，我们最好也支持并发编译，并发编译的实现并不复杂，只需要将上面处理单个jar/class的逻辑，并发处理，最后阻塞等待所有任务结束即可。
+
+
+```java
+
+private WaitableExecutor waitableExecutor = WaitableExecutor.useGlobalSharedThreadPool();
+
+
+//异步并发处理jar/class
+waitableExecutor.execute(() -> {
+    bytecodeWeaver.weaveJar(srcJar, destJar);
+    return null;
+});
+waitableExecutor.execute(() -> {
+    bytecodeWeaver.weaveSingleClassToFile(file, outputFile, inputDirPath);
+    return null;
+});  
+
+
+//等待所有任务结束
+waitableExecutor.waitForTasksWithQuickFail(true);
+
+```
+
 
 后面做各种模式下的编译速度对比，会发现增量和并发对编译速度的影响是很显著的，而我在查看Android gradle plugin自身的十几个Transform时，发现它们实现方式也有一些区别，有些用kotlin写，有些用java写，有些支持增量，有些不支持，而且是代码注释写了一个大大的FIXME, To support incremental build。所以，讲道理，现阶段的Android编译速度，还是有提升空间的。
 
