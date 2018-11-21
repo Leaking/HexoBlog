@@ -290,6 +290,8 @@ public boolean isIncremental() {
 如果不是增量编译，则清空output目录，然后按照前面的方式，逐个class/jar处理
 如果是增量编译，则要检查每个文件的Status，Status分四种，
 
+![](/images/transform_Status.png)
+
 + NOTCHANGED: 当前文件不需处理，甚至复制操作都不用；
 + ADDED、CHANGED: 正常处理，输出给下一个任务；
 + REMOVED: 移除outputProvider获取路径对应的文件。
