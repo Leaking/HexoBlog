@@ -1021,8 +1021,9 @@ https://github.com/Leaking/Hunter/wiki/Developer-API
 
 > 他觉得我说的好像这是okhttp的锅，然而这其实是okhttp的一个feature，他觉得全局状态是一种不好的编码，所以在设计okhttp没有提供全局Intercepter/Dns/EventListener的接口。而第三方依赖库不能设置自定义Intercepter/Dns/EventListener这是它们的锅。
 
-但是，他的观点我不完全同意，虽然全局状态确实是一种不好的设计，但是，如果要做性能监控之类的功能，这就很难避免或多或少的全局侵入，
+但是，他的观点我不完全同意，虽然全局状态确实是一种不好的设计，但是，如果要做性能监控之类的功能，这就很难避免或多或少的全局侵入。（不过我确实措辞不当，确实说得这好像是Okhttp的锅一样）
 
+言归正传，来看看我们要怎么来对OkHttp动刀，请看以下代码，这是OkhttpClient中内部类Builder的构造函数，我们的目标是在末尾加上下面四行代码，这样设计
 
 
 ```java
