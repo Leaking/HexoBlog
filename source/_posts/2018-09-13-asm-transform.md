@@ -424,13 +424,13 @@ waitableExecutor.waitForTasksWithQuickFail(true);
 ![](/images/transform_time_2.png)
 
 
-可以发现，增量的速度比全量的模式速度提升了3倍多，而且这个速度优化会随着工程的变大而更加显著。
+
+可以发现，增量的速度比全量的速度提升了3倍多，而且这个速度优化会随着工程的变大而更加显著。
+
+数据表明，增量和并发对编译速度的影响是很大的。而我在查看Android gradle plugin自身的十几个Transform时，发现它们实现方式也有一些区别，有些用kotlin写，有些用java写，有些支持增量，有些不支持，而且是代码注释写了一个大大的FIXME, To support incremental build。所以，讲道理，现阶段的Android编译速度，还是有提升空间的。
 
 
-增量和并发对编译速度的影响是很大的。而我在查看Android gradle plugin自身的十几个Transform时，发现它们实现方式也有一些区别，有些用kotlin写，有些用java写，有些支持增量，有些不支持，而且是代码注释写了一个大大的FIXME, To support incremental build。所以，讲道理，现阶段的Android编译速度，还是有提升空间的。
-
-
-上面我们介绍了Transform，以及如何高效地在编译期间处理所有字节码，那么具体怎么处理字节码呢？接下来来让我们一起来看看JVM平台上的字节码神兵利器，ASM!
+上面我们介绍了Transform，以及如何高效地在编译期间处理所有字节码，那么具体怎么处理字节码呢？接下来让我们一起看看JVM平台上的处理字节码神兵利器，ASM!
 
 
 # 二、ASM
@@ -443,7 +443,14 @@ ASM的官网在这里[https://asm.ow2.io/](https://asm.ow2.io/)，贴一下它�
 
 JVM平台上，处理字节码的框架最常见的就三个，ASM，Javasist，AspectJ。我尝试过Javasist，而AspectJ也稍有了解，最终选择ASM，因为使用它可以更底层地处理字节码的每条命令，处理速度、内存占用，也优于其他两个框架。
 
-我们这部分介绍ASM，但是由于篇幅问题，不会从字节码的基础展开介绍，着重介绍讲ASM的使用，以及应用于Android插件开发时，遇到的问题，及其解决方案。
+
+我们可以来做一个对比，上面我们所做的计算编译时间实验的基础上，做如下试验，分别用ASM和Javasist全量处理工程所有class，并且都不开启并发处理的情况下，一次clean build中，transform的耗时对比如下
+
+![](/images/transform_asm_javasist.png)
+
+ASM相比Javasist的优势非常显著，ASM相比其他字节码操作库的效率和性能优势应该毋庸置疑的，毕竟是诸多JVM语言钦定的字节码生成库。
+
+我们这部分将来介绍ASM，但是由于篇幅问题，不会从字节码的基础展开介绍，着重介绍讲ASM的使用，以及ASM解析class文件结构的原理，还有应用于Android插件开发时，遇到的问题，及其解决方案。
 
 
 ## ASM的引入
@@ -484,12 +491,12 @@ ASM设计了两种API类型，一种是Tree API, 一种是基于Visitor API(visi
 
 Tree API将class的结构读取到内存，构建一个树形结构，然后需要处理Method、Field等元素时，到树形结构中定位到某个元素，进行操作，然后把操作再写入新的class文件。
 
-Visitor API则将通过接口的方式，分离读class和写class的逻辑，一般通过一个ClassReader负责读取class字节码，然后会ClassReader通过一个ClassVisitor接口，将字节码的每个细节传递给ClassVisitor（你会发现ClassVisitor中有多个visitXXXX接口），这个过程就像ClassReader带着ClassVisitor游览了class字节码的每一个指令，ClassVisitor默认行为是将接受到的数据构建出新的class，而我们可以在每一处visitXXX的接口做一些自己的事情，这就达到修改字节码的目的。
+Visitor API则将通过接口的方式，分离读class和写class的逻辑，一般通过一个ClassReader负责读取class字节码，然后ClassReader通过一个ClassVisitor接口，将字节码的每个细节通过接口的方式，传递给ClassVisitor（你会发现ClassVisitor中有多个visitXXXX接口），这个过程就像ClassReader带着ClassVisitor游览了class字节码的每一个指令。
 
 
 上面这两种解析文件结构的方式在很多处理结构化数据时都常见，一般得看需求背景选择合适的方案，而我们的需求是这样的，某个目的，寻找class文件中的一个hook点，进行字节码修改，这种背景下，我们选择Visitor API的方式比较合适。
 
-让我们来写一个简单的demo，复制一个class文件
+让我们来写一个简单的demo，这段代码很简单，读取一个class的内容，保存到另一个文件
 
 
 ```java
@@ -552,7 +559,7 @@ public void accept(ClassVisitor classVisitor, Attribute[] attributePrototypes, i
 
 
 
-最后，我们通过ClassWriter的toByteArray()，将从ClassReader传递到ClassWriter的字节码导出，写入新的文件即可。这就完成了class文件的复制，这个demo虽然很简单，但是涵盖了使用ASM使用Visitor API修改字节码最底层的原理，大致流程如图
+最后，我们通过ClassWriter的toByteArray()，将从ClassReader传递到ClassWriter的字节码导出，写入新的文件即可。这就完成了class文件的复制，这个demo虽然很简单，但是涵盖了ASM使用Visitor API修改字节码最底层的原理，大致流程如图
 
 ![](/images/transform_ASM-1.png)
 
@@ -564,7 +571,7 @@ public void accept(ClassVisitor classVisitor, Attribute[] attributePrototypes, i
 ![](/images/transform_ASM-2.png)
 
 
-我们只要稍微看一下ClassVisitor的代码，发现它的构造函数，是可以接收另一个ClassVisitor的，从通过这个ClassVisitor代理所有的方法。让我们来看一个例子，为class中的每个方法的开头和结尾都插入一行代码，打印当前方法的名字。
+我们只要稍微看一下ClassVisitor的代码，发现它的构造函数，是可以接收另一个ClassVisitor的，从而通过这个ClassVisitor代理所有的方法。让我们来看一个例子，为class中的每个方法调用语句的开头和结尾插入一行代码
 
 修改前的方法是这样
 
@@ -660,18 +667,13 @@ class CallMethodAdapter extends MethodVisitor implements Opcodes {
 
     }
 
-    @Override
-    public void visitParameter(String name, int access) {
-        System.out.println("name " + name);
-        super.visitParameter(name, access);
-    }
 }
 
 ```
 
 CallClassAdapter中的visitMethod使用了一个自定义的MethodVisitor-----CallMethodAdapter，它也是代理了原来的MethodVisitor，原理和ClassVisitor的代理一样。
 
-看到这里，貌似使用ASM修改字节码的大概套路都走完了，那么如何写出上面插入打印方法名的逻辑，这就需要一些字节码的基础知识了，我们说过这里不会展开介绍字节码，但是我们可以介绍一些快速学习字节码的方式，同时也是开发字节码相关工程一些实用的工具。
+看到这里，貌似使用ASM修改字节码的大概套路都走完了，那么如何写出上面`visitMethodInsn`方法中插入打印方法名的逻辑，这就需要一些字节码的基础知识了，我们说过这里不会展开介绍字节码，但是我们可以介绍一些快速学习字节码的方式，同时也是开发字节码相关工程一些实用的工具。
 
 先从行号开始吧
 
@@ -705,7 +707,7 @@ private static void printTwo() {
 
 idea下可以开启一个选项，让查看class内容时，保留真正的行数
 
-看起反编译保留行号后，你看到的是这样
+开启后，你看到的是这样
 
 ![](/images/transform_line_2.png)
 
@@ -718,11 +720,11 @@ idea下可以开启一个选项，让查看class内容时，保留真正的行�
 
 ![](/images/transform_line_3.png)
 
-其实无论字节码和ASM的代码上看，class中的所有代码，都是先声明行号X，然后开始几条字节码指令，这几条字节码对应的代码都在行号X中，知道声明下一行代码。
+其实无论字节码和ASM的代码上看，class中的所有代码，都是先声明行号X，然后开始几条字节码指令，这几条字节码对应的代码都在行号X中，直到声明下一个新的行号。
 
 ## ASM code
 
-我们如果要对某个class进行修改，那需要对字节码具体做什么修改呢？最直观的方法就是，先编译生成目标class，然后看它的字节码和原来class的字节码有什么区别（查看字节码可以查阅javap工具），但是这样还不够，其实我们最终并不是读写字节码，而是使用ASM来修改，我们这里先做一个区别，bytecode vs ASM code，前者就是JVM意义的字节码，而后者是用ASM描述的bytecode，其实二者非常的接近，只是ASM code用Java代码来描述。所以，我们最好是对比ASM code，而不是对比bytecode。ASM code的区别，就是我们要做的修改。
+解析来介绍，如何写出上面生成代码的逻辑。首先，我们设想一下，如果要对某个class进行修改，那需要对字节码具体做什么修改呢？最直观的方法就是，先编译生成目标class，然后看它的字节码和原来class的字节码有什么区别（查看字节码可以使用javap工具），但是这样还不够，其实我们最终并不是读写字节码，而是使用ASM来修改，我们这里先做一个区别，bytecode vs ASM code，前者就是JVM意义的字节码，而后者是用ASM描述的bytecode，其实二者非常的接近，只是ASM code用Java代码来描述。所以，我们应该是对比ASM code，而不是对比bytecode。对比ASM code的diff，基本就是我们要做的修改。
 
 而ASM也提供了一个这样的类：ASMifier，它可以生成ASM code，但是，其实还有更快捷的工具，Intellij IDEA有一个插件
 [Asm Bytecode Outline](https://plugins.jetbrains.com/plugin/5918-asm-bytecode-outline)，可以查看一个class文件的bytecode和ASM code。
@@ -733,7 +735,7 @@ idea下可以开启一个选项，让查看class内容时，保留真正的行�
 
 ## ClassWriter在Android上的坑
 
-如果我们直接按上面的套路，将ASM应用到Android编译插件中，会踩到一个坑，这个坑来自于ClassWriter，具体是因为其中的一个逻辑，寻找两个类的共同父类。可以看看ClassWriter中的这个方法getCommonSuperClass，
+如果我们直接按上面的套路，将ASM应用到Android编译插件中，会踩到一个坑，这个坑来自于ClassWriter，具体是因为ClassWriter其中的一个逻辑，寻找两个类的共同父类。可以看看ClassWriter中的这个方法getCommonSuperClass，
 
 
 
@@ -784,7 +786,7 @@ protected String getCommonSuperClass(final String type1, final String type2) {
 ```
 
 
-这个方法用于寻找两个类的共同父类，我们可以看到它是获取当前class的classLoader加载两个输入的类型，而编译期间使用的classloader并没有加载Android项目中的代码，所以我们需要一个自定义的ClassLoader，将前面提到的Transform中接收到的所有jar以及class，还有android.jar添加到自定义ClassLoader中。
+这个方法用于寻找两个类的共同父类，我们可以看到它是获取当前class的classLoader加载两个输入的类型，而编译期间使用的classloader并没有加载Android项目中的代码，所以我们需要一个自定义的ClassLoader，将前面提到的Transform中接收到的所有jar以及class，还有android.jar都添加到自定义ClassLoader中。（其实上面这个方法注释中已经暗示了这个方法存在的一些问题）
 
 如下
 
@@ -817,7 +819,7 @@ public static URLClassLoader getClassLoader(Collection<TransformInput> inputs,
 
 ```
 
-但是，如果只是替换了getCommonSuperClass中的Classloader，依然还有一个更深的坑，我们可以看到前面getCommonSuperClass的实现是如何寻找父类的，它是通过Class.forName加载某个类，然后再去寻找父类，但是，但是，android.jar中的类可不能随随便便加载的呀，android.jar对于Android工程来说只是编译时依赖，运行时是用Android机器上自己的android.jar。而且android.jar所有方法包括构造函数都是空实现，其中都只有一行代码
+但是，如果只是替换了getCommonSuperClass中的Classloader，依然还有一个更深的坑，我们可以看看前面getCommonSuperClass的实现，它是如何寻找父类的呢？它是通过Class.forName加载某个类，然后再去寻找父类，但是，但是，android.jar中的类可不能随随便便加载的呀，android.jar对于Android工程来说只是编译时依赖，运行时是用Android机器上自己的android.jar。而且android.jar所有方法包括构造函数都是空实现，其中都只有一行代码
 
 ```java
 throw new RuntimeException("Stub!");
@@ -825,7 +827,7 @@ throw new RuntimeException("Stub!");
 
 这样加载某个类时，它的静态域就会被触发，而如果有一个static的变量刚好在声明时被初始化，而初始化中只有一个RuntimeException，此时就会抛异常。
 
-所以，我们不能通过这种方式来获取父类，能否通过不需要加载class就能获取它的父类的方式呢？谜底就在眼前，父类其实也是一个class的字节码中的一项数据，那么我们就从字节码中查询它的。最终实现是这样。
+所以，我们不能通过这种方式来获取父类，能否通过不需要加载class就能获取它的父类的方式呢？谜底就在眼前，父类其实也是一个class的字节码中的一项数据，那么我们就从字节码中查询父类即可。最终实现是这样。
 
 
 ```java
@@ -984,9 +986,73 @@ public class ExtendClassWriter extends ClassWriter {
 
 ```
 
+到此为止，我们介绍了在Android上实现修改字节码的两个基础技术Transform+ASM，介绍了其原理和应用，分析了性能优化以及在Android平台上的适配等。在此基础上，我抽象出一个轮子，让开发者写字节码插件时，只需要写少量的ASM code即可，而不需关心Transform和ASM背后的很多细节。详见
+
+https://github.com/Leaking/Hunter/wiki/Developer-API
+
+
+万事俱备，只欠写一个插件来玩玩了，让我们来看看几个应用案例。
+
+
+## 应用案例
+
+先抛结论，修改字节码其实也有套路，一种是hack代码调用，一种是hack代码实现。
+
+比如修改Android Framework（android.jar）的实现，你是没办法在编译期间达到这个目的的，因为最终Android Framework的class在Android设备上。所以这种情况下你需要从hack代码调用入手，比如Log.i(TAG, "hello")，你不可能hack其中的实现，但是你可以把它hack成HackLog.i(TAG, "seeyou")。
+
+而如果是要修改第三方依赖或者工程中写的代码，则可以直接hack代码实现，但是，当如果你要插入的字节码比较多时，也可以通过一定技巧减少写ASM code的量，你可以将大部分可以抽象的逻辑抽象到某个写好的class中，然后ASM code只需写调用这个写好的class的语句。
+
+当然上面只是目前按照我的经验做的一点总结，还是有一些更复杂的情况要具体情况具体分析，比如在实现类似JakeWharton的[hugo](https://github.com/JakeWharton/hugo)的功能时，在代码开头获取方法参数名时我就遇到棘手的问题（下面会介绍如何解决）。
+
+下面介绍Hunter中四个插件的实现
+
++ OkHttp-Plugin: 为Okhttp设置全局 [Interceptor](https://github.com/square/okhttp/wiki/Interceptors) / [Eventlistener](https://github.com/square/okhttp/wiki/Events) 
+
++ Timing-Plugin： 监控UI耗时，打印带有时间的堆栈，并可以让用户自定义处理耗时数据的实现
+
++ LogLine-Plugin： 为日志加上行号
+
++ Debug-Plugin： 方法加上注解，即可打印方法入参，返回值，以及耗时，类似JakeWharton的[hugo](https://github.com/JakeWharton/hugo)
+
+
+# OkHttp-Plugin
+
+使用OkHttp的人知道，OkHttp里每一个OkHttp都可以设置自己独立的Intercepter/Dns/EventListener(EventListener是okhttp3.11新增)，但是需要对全局所有OkHttp设置统一的Intercepter/Dns/EventListener就很麻烦，需要一处处设置，而且一些第三方依赖中的OkHttp很大可能无法设置。曾经在官方repo提过这个问题的[issue](https://github.com/square/okhttp/issues/4228)，没有得到很好的回复，作者之一觉得如果是他，他会用依赖注入的方式来实现统一的Okhttp配置，但是这种方式只能说可行但是不理想，后台在reddit发[帖子](https://www.reddit.com/r/androiddev/comments/9nvg0f/a_plugin_framework_to_moidfy_bytecode_of_andrid/)安利自己Hunter这个轮子时，JakeWharton大佬竟然亲自回答了，虽然面对大佬，不过还是要正面刚！争论一波之后，总结一下他的立场，大概如下
+
+> 他觉得我说的好像这是okhttp的锅，然而这其实是okhttp的一个feature，他觉得全局状态是一种不好的编码，所以在设计okhttp没有提供全局Intercepter/Dns/EventListener的接口。而第三方依赖库不能设置自定义Intercepter/Dns/EventListener这是它们的锅。
+
+但是，他的观点我不完全同意，虽然全局状态确实是一种不好的设计，但是，如果要做性能监控之类的功能，这就很难避免或多或少的全局侵入，
 
 
 
+```java
 
+public Builder(){
+    this.dispatcher = new Dispatcher();
+    this.protocols = OkHttpClient.DEFAULT_PROTOCOLS;
+    this.connectionSpecs = OkHttpClient.DEFAULT_CONNECTION_SPECS;
+    this.eventListenerFactory = EventListener.factory(EventListener.NONE);
+    this.proxySelector = ProxySelector.getDefault();
+    this.cookieJar = CookieJar.NO_COOKIES;
+    this.socketFactory = SocketFactory.getDefault();
+    this.hostnameVerifier = OkHostnameVerifier.INSTANCE;
+    this.certificatePinner = CertificatePinner.DEFAULT;
+    this.proxyAuthenticator = Authenticator.NONE;
+    this.authenticator = Authenticator.NONE;
+    this.connectionPool = new ConnectionPool();
+    this.dns = Dns.SYSTEM;
+    this.followSslRedirects = true;
+    this.followRedirects = true;
+    this.retryOnConnectionFailure = true;
+    this.connectTimeout = 10000;
+    this.readTimeout = 10000;
+    this.writeTimeout = 10000;
+    this.pingInterval = 0;
+    this.eventListenerFactory = OkHttpHooker.globalEventFactory;
+    this.dns = OkHttpHooker.globalDns;
+    this.interceptors.addAll(OkHttpHooker.globalInterceptors);
+    this.networkInterceptors.addAll(OkHttpHooker.globalNetworkInterceptors);
+}
 
+```
 
