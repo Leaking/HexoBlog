@@ -402,10 +402,35 @@ waitableExecutor.waitForTasksWithQuickFail(true);
 ```
 
 
-后面做各种模式下的编译速度对比，会发现增量和并发对编译速度的影响是很显著的，而我在查看Android gradle plugin自身的十几个Transform时，发现它们实现方式也有一些区别，有些用kotlin写，有些用java写，有些支持增量，有些不支持，而且是代码注释写了一个大大的FIXME, To support incremental build。所以，讲道理，现阶段的Android编译速度，还是有提升空间的。
+接下来我们对编译速度做一个对比，首先，在QQ邮箱Android客户端工程中，我们先做一次cleanbuild
+
+```groovy
+./gradlew clean assembleDebug --profile
+```
+
+给项目中添加UI耗时统计，全局每个方法（包括普通class文件和第三方jar包中的所有class）的第一行和最后一行都进行插桩，实现方式就是Transform+ASM，对比一下并发Transform和非并发Transform下，Tranform这一步的耗时
+
+![](/images/transform_time_1.png)
+
+可以发现，并发编译，基本比非并发编译速度提高了80%。效果很显著
 
 
-上面我们介绍了Transform，以及如何高效地在编译期间寻找时机处理所有字节码，那么具体怎么处理字节码呢？接下来来让我们一起来看看JVM平台上的字节码神兵利器，ASM!
+然后，让我们再做另一个试验，我们在项目中模拟日常修改某个class文件的一行代码，这时是符合增量编译的环境的。然后在刚才基础上还是做同样的插桩逻辑，对比增量Transform和全量Transform的差异。
+
+```groovy
+./gradlew assembleDebug --profile
+```
+
+![](/images/transform_time_2.png)
+
+
+可以发现，增量的速度比全量的模式速度提升了3倍多，而且这个速度优化会随着工程的变大而更加显著。
+
+
+增量和并发对编译速度的影响是很大的。而我在查看Android gradle plugin自身的十几个Transform时，发现它们实现方式也有一些区别，有些用kotlin写，有些用java写，有些支持增量，有些不支持，而且是代码注释写了一个大大的FIXME, To support incremental build。所以，讲道理，现阶段的Android编译速度，还是有提升空间的。
+
+
+上面我们介绍了Transform，以及如何高效地在编译期间处理所有字节码，那么具体怎么处理字节码呢？接下来来让我们一起来看看JVM平台上的字节码神兵利器，ASM!
 
 
 # 二、ASM
