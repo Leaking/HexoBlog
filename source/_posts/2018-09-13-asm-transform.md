@@ -1004,7 +1004,7 @@ https://github.com/Leaking/Hunter/wiki/Developer-API
 
 当然上面只是目前按照我的经验做的一点总结，还是有一些更复杂的情况要具体情况具体分析，比如在实现类似JakeWharton的[hugo](https://github.com/JakeWharton/hugo)的功能时，在代码开头获取方法参数名时我就遇到棘手的问题（下面会介绍如何解决）。
 
-下面介绍Hunter中四个插件的实现
+Hunter中提供了四个插件的实现
 
 + OkHttp-Plugin: 为Okhttp设置全局 [Interceptor](https://github.com/square/okhttp/wiki/Interceptors) / [Eventlistener](https://github.com/square/okhttp/wiki/Events) 
 
@@ -1014,16 +1014,18 @@ https://github.com/Leaking/Hunter/wiki/Developer-API
 
 + Debug-Plugin： 方法加上注解，即可打印方法入参，返回值，以及耗时，类似JakeWharton的[hugo](https://github.com/JakeWharton/hugo)
 
+这里挑选OkHttp-Plugin的实现进行分析。
 
-# OkHttp-Plugin
+
+### OkHttp-Plugin
 
 使用OkHttp的人知道，OkHttp里每一个OkHttp都可以设置自己独立的Intercepter/Dns/EventListener(EventListener是okhttp3.11新增)，但是需要对全局所有OkHttp设置统一的Intercepter/Dns/EventListener就很麻烦，需要一处处设置，而且一些第三方依赖中的OkHttp很大可能无法设置。曾经在官方repo提过这个问题的[issue](https://github.com/square/okhttp/issues/4228)，没有得到很好的回复，作者之一觉得如果是他，他会用依赖注入的方式来实现统一的Okhttp配置，但是这种方式只能说可行但是不理想，后台在reddit发[帖子](https://www.reddit.com/r/androiddev/comments/9nvg0f/a_plugin_framework_to_moidfy_bytecode_of_andrid/)安利自己Hunter这个轮子时，JakeWharton大佬竟然亲自回答了，虽然面对大佬，不过还是要正面刚！争论一波之后，总结一下他的立场，大概如下
 
 > 他觉得我说的好像这是okhttp的锅，然而这其实是okhttp的一个feature，他觉得全局状态是一种不好的编码，所以在设计okhttp没有提供全局Intercepter/Dns/EventListener的接口。而第三方依赖库不能设置自定义Intercepter/Dns/EventListener这是它们的锅。
 
-但是，他的观点我不完全同意，虽然全局状态确实是一种不好的设计，但是，如果要做性能监控之类的功能，这就很难避免或多或少的全局侵入。（不过我确实措辞不当，确实说得这好像是Okhttp的锅一样）
+但是，他的观点我不完全同意，虽然全局状态确实是一种不好的设计，但是，如果要做性能监控之类的功能，这就很难避免或多或少的全局侵入。（不过我确实措辞不当，说得这好像是Okhttp的锅一样）
 
-言归正传，来看看我们要怎么来对OkHttp动刀，请看以下代码，这是OkhttpClient中内部类Builder的构造函数，我们的目标是在末尾加上下面四行代码，这样设计
+言归正传，来看看我们要怎么来对OkHttp动刀，请看以下代码
 
 
 ```java
@@ -1056,4 +1058,155 @@ public Builder(){
 }
 
 ```
+
+
+这是OkhttpClient中内部类Builder的构造函数，我们的目标是在方法末尾加上四行代码，这样一来，所有的OkHttpClient都会拥有共同的Intercepter/Dns/EventListener。我们再来看看OkHttpHooker的实现
+
+```java
+
+public class OkHttpHooker {
+
+    public static EventListener.Factory globalEventFactory = new EventListener.Factory() {
+        public EventListener create(Call call) {
+            return EventListener.NONE;
+        }
+    };;
+
+    public static Dns globalDns = Dns.SYSTEM;
+
+    public static List<Interceptor> globalInterceptors = new ArrayList<>();
+
+    public static List<Interceptor> globalNetworkInterceptors = new ArrayList<>();
+
+    public static void installEventListenerFactory(EventListener.Factory factory) {
+        globalEventFactory = factory;
+    }
+
+    public static void installDns(Dns dns) {
+        globalDns = dns;
+    }
+
+    public static void installInterceptor(Interceptor interceptor) {
+        if(interceptor != null)
+            globalInterceptors.add(interceptor);
+    }
+
+    public static void installNetworkInterceptors(Interceptor networkInterceptor) {
+        if(networkInterceptor != null)
+            globalNetworkInterceptors.add(networkInterceptor);
+    }
+
+
+}
+```
+
+这样，只需要为OkHttpHooker预先install好几个全局的Intercepter/Dns/EventListener即可。
+
+
+那么，如何来实现上面OkhttpClient内部Builder中插入四行代码呢？
+
+首先，我们通过Hunter的框架，可以隐藏掉Transform和ASM绝大部分细节，我们只需把注意力放在写ClassVisitor以及MethodVisitor即可。
+
+
+我们新建一个ClassVisitor(自定义ClassVisitor是为了代理ClassWriter，前面讲过)
+
+
+```java
+public final class OkHttpClassAdapter extends ClassVisitor{
+
+    private String className;
+
+    OkHttpClassAdapter(final ClassVisitor cv) {
+        super(Opcodes.ASM5, cv);
+    }
+
+    @Override
+    public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+        super.visit(version, access, name, signature, superName, interfaces);
+        this.className = name;
+    }
+
+    @Override
+    public MethodVisitor visitMethod(final int access, final String name,
+                                     final String desc, final String signature, final String[] exceptions) {
+        MethodVisitor mv = cv.visitMethod(access, name, desc, signature, exceptions);
+        if(className.equals("okhttp3/OkHttpClient$Builder")) {
+            return mv == null ? null : new OkHttpMethodAdapter(className + File.separator + name, access, desc, mv);
+        } else {
+            return mv;
+        }
+    }
+
+}
+```
+
+
+我们寻找出`okhttp3/OkHttpClient$Builder`这个类，其他类不管它，那么其他类只会被普通的复制，而`okhttp3/OkHttpClient$Builder`将会有自定义的MethodVisitor来处理
+
+我们来看看这个MethodVisitor的实现
+
+```java
+
+public final class OkHttpMethodAdapter extends LocalVariablesSorter implements Opcodes {
+
+    private boolean defaultOkhttpClientBuilderInitMethod = false;
+
+    OkHttpMethodAdapter(String name, int access, String desc, MethodVisitor mv) {
+        super(Opcodes.ASM5, access, desc, mv);
+        if ("okhttp3/OkHttpClient$Builder/<init>".equals(name) && "()V".equals(desc)) {
+            defaultOkhttpClientBuilderInitMethod = true;
+        }
+    }
+
+    @Override
+    public void visitInsn(int opcode) {
+        if(defaultOkhttpClientBuilderInitMethod) {
+            if ((opcode >= IRETURN && opcode <= RETURN) || opcode == ATHROW) {
+
+                //EventListenFactory
+                mv.visitVarInsn(ALOAD, 0);
+                mv.visitFieldInsn(GETSTATIC, "com/hunter/library/okhttp/OkHttpHooker", "globalEventFactory", "Lokhttp3/EventListener$Factory;");
+                mv.visitFieldInsn(PUTFIELD, "okhttp3/OkHttpClient$Builder", "eventListenerFactory", "Lokhttp3/EventListener$Factory;");
+
+                //Dns
+                mv.visitVarInsn(ALOAD, 0);
+                mv.visitFieldInsn(GETSTATIC, "com/hunter/library/okhttp/OkHttpHooker", "globalDns", "Lokhttp3/Dns;");
+                mv.visitFieldInsn(PUTFIELD, "okhttp3/OkHttpClient$Builder", "dns", "Lokhttp3/Dns;");
+
+                //Interceptor
+                mv.visitVarInsn(ALOAD, 0);
+                mv.visitFieldInsn(GETFIELD, "okhttp3/OkHttpClient$Builder", "interceptors", "Ljava/util/List;");
+                mv.visitFieldInsn(GETSTATIC, "com/hunter/library/okhttp/OkHttpHooker", "globalInterceptors", "Ljava/util/List;");
+                mv.visitMethodInsn(INVOKEINTERFACE, "java/util/List", "addAll", "(Ljava/util/Collection;)Z", true);
+                mv.visitInsn(POP);
+
+                //NetworkInterceptor
+                mv.visitVarInsn(ALOAD, 0);
+                mv.visitFieldInsn(GETFIELD, "okhttp3/OkHttpClient$Builder", "networkInterceptors", "Ljava/util/List;");
+                mv.visitFieldInsn(GETSTATIC, "com/hunter/library/okhttp/OkHttpHooker", "globalNetworkInterceptors", "Ljava/util/List;");
+                mv.visitMethodInsn(INVOKEINTERFACE, "java/util/List", "addAll", "(Ljava/util/Collection;)Z", true);
+                mv.visitInsn(POP);
+            }
+        }
+        super.visitInsn(opcode);
+    }
+
+}
+
+```
+
+首先，我们先找出`okhttp3/OkHttpClient$Builder`的构造函数，然后在这个构造函数的末尾，执行插入字节码的逻辑，我们可以发现，字节码的指令是符合逆波兰式的，都是操作数在前，操作符在后。
+
+这就成功hack了Okhttp，我们就可以用全局统一的Intercepter/Dns/EventListener来监控我们APP的网络了。另外，说个题外话，可能有人可能会说，并非所有网络请求都是通过Okhttp来写，也可能是通过URLConnection来写，可以参考我另一篇文章提到的 
+
+http://quinnchen.me/2017/11/18/2017-11-18-android-http-dns/#HttpURLConnection
+
+这里有讲解如何将URLConnection的请求导向自己指定的OkhttpClient.
+
+
+
+
+
+
+
 
