@@ -1002,22 +1002,11 @@ https://github.com/Leaking/Hunter/wiki/Developer-API
 
 而如果是要修改第三方依赖或者工程中写的代码，则可以直接hack代码实现，但是，当如果你要插入的字节码比较多时，也可以通过一定技巧减少写ASM code的量，你可以将大部分可以抽象的逻辑抽象到某个写好的class中，然后ASM code只需写调用这个写好的class的语句。
 
-当然上面只是目前按照我的经验做的一点总结，还是有一些更复杂的情况要具体情况具体分析，比如在实现类似JakeWharton的[hugo](https://github.com/JakeWharton/hugo)的功能时，在代码开头获取方法参数名时我就遇到棘手的问题（下面会介绍如何解决）。
-
-Hunter中提供了四个插件的实现
-
-+ OkHttp-Plugin: 为Okhttp设置全局 [Interceptor](https://github.com/square/okhttp/wiki/Interceptors) / [Eventlistener](https://github.com/square/okhttp/wiki/Events) 
-
-+ Timing-Plugin： 监控UI耗时，打印带有时间的堆栈，并可以让用户自定义处理耗时数据的实现
-
-+ LogLine-Plugin： 为日志加上行号
-
-+ Debug-Plugin： 方法加上注解，即可打印方法入参，返回值，以及耗时，类似JakeWharton的[hugo](https://github.com/JakeWharton/hugo)
-
-这里挑选OkHttp-Plugin的实现进行分析。
+当然上面只是目前按照我的经验做的一点总结，还是有一些更复杂的情况要具体情况具体分析，比如在实现类似JakeWharton的[hugo](https://github.com/JakeWharton/hugo)的功能时，在代码开头获取方法参数名时我就遇到棘手的问题（用了一种二次扫描的方式解决了这个问题，可以移步项目主页参考具体实现）。
 
 
-### OkHttp-Plugin
+我们这里挑选OkHttp-Plugin的实现进行分析、演示如何使用Huntet框架开发一个字节码编译插件。
+
 
 使用OkHttp的人知道，OkHttp里每一个OkHttp都可以设置自己独立的Intercepter/Dns/EventListener(EventListener是okhttp3.11新增)，但是需要对全局所有OkHttp设置统一的Intercepter/Dns/EventListener就很麻烦，需要一处处设置，而且一些第三方依赖中的OkHttp很大可能无法设置。曾经在官方repo提过这个问题的[issue](https://github.com/square/okhttp/issues/4228)，没有得到很好的回复，作者之一觉得如果是他，他会用依赖注入的方式来实现统一的Okhttp配置，但是这种方式只能说可行但是不理想，后台在reddit发[帖子](https://www.reddit.com/r/androiddev/comments/9nvg0f/a_plugin_framework_to_moidfy_bytecode_of_andrid/)安利自己Hunter这个轮子时，JakeWharton大佬竟然亲自回答了，虽然面对大佬，不过还是要正面刚！争论一波之后，总结一下他的立场，大概如下
 
@@ -1105,7 +1094,74 @@ public class OkHttpHooker {
 
 那么，如何来实现上面OkhttpClient内部Builder中插入四行代码呢？
 
-首先，我们通过Hunter的框架，可以隐藏掉Transform和ASM绝大部分细节，我们只需把注意力放在写ClassVisitor以及MethodVisitor即可。
+首先，我们通过Hunter的框架，可以隐藏掉Transform和ASM绝大部分细节，我们只需把注意力放在写ClassVisitor以及MethodVisitor即可。我们一共需要做以下几步
+
+1、新建一个自定义transform，添加到一个自定义gradle plugin中
+2、继承HunterTransform实现自定义transform
+3、实现自定义的ClassVisitor，并依情况实现自定义MethodVisitor
+
+
+其中第一步文章讲解transform一部分有讲到，基本是一样简短的写法，我们从第二步讲起
+
+继承HunterTransform，就可以让你的transform具备并发、增量的功能。
+
+```
+final class OkHttpHunterTransform extends HunterTransform {
+
+    private Project project;
+    private OkHttpHunterExtension okHttpHunterExtension;
+
+    public OkHttpHunterTransform(Project project) {
+        super(project);
+        this.project = project;
+        //依情况而定，看看你需不需要有插件扩展
+        project.getExtensions().create("okHttpHunterExt", OkHttpHunterExtension.class);
+        //必须的一步，继承BaseWeaver，帮你隐藏ASM细节
+        this.bytecodeWeaver = new OkHttpWeaver();
+    }
+
+    @Override
+    public void transform(Context context, Collection<TransformInput> inputs, Collection<TransformInput> referencedInputs, TransformOutputProvider outputProvider, boolean isIncremental) throws IOException, TransformException, InterruptedException {
+        okHttpHunterExtension = (OkHttpHunterExtension) project.getExtensions().getByName("okHttpHunterExt");
+        super.transform(context, inputs, referencedInputs, outputProvider, isIncremental);
+    }
+
+    // 用于控制修改字节码在哪些debug包还是release包下发挥作用，或者完全打开/关闭
+    @Override
+    protected RunVariant getRunVariant() {
+        return okHttpHunterExtension.runVariant;
+    }
+
+}
+
+//BaseWeaver帮你隐藏了ASM的很多复杂逻辑
+public final class OkHttpWeaver extends BaseWeaver {
+
+    @Override
+    protected ClassVisitor wrapClassWriter(ClassWriter classWriter) {
+        return new OkHttpClassAdapter(classWriter);
+    }
+
+}
+
+
+//插件扩展
+public class OkHttpHunterExtension {
+
+    public RunVariant runVariant = RunVariant.ALWAYS;
+
+    @Override
+    public String toString() {
+        return "OkHttpHunterExtension{" +
+                "runVariant=" + runVariant +
+                '}';
+    }
+}
+
+
+```
+
+好了，Transform写起来就变得这么简单，接下来看自定义ClassVisitor，它在OkHttpWeaver返回。
 
 
 我们新建一个ClassVisitor(自定义ClassVisitor是为了代理ClassWriter，前面讲过)
@@ -1197,11 +1253,21 @@ public final class OkHttpMethodAdapter extends LocalVariablesSorter implements O
 
 首先，我们先找出`okhttp3/OkHttpClient$Builder`的构造函数，然后在这个构造函数的末尾，执行插入字节码的逻辑，我们可以发现，字节码的指令是符合逆波兰式的，都是操作数在前，操作符在后。
 
-这就成功hack了Okhttp，我们就可以用全局统一的Intercepter/Dns/EventListener来监控我们APP的网络了。另外，说个题外话，可能有人可能会说，并非所有网络请求都是通过Okhttp来写，也可能是通过URLConnection来写，可以参考我另一篇文章提到的 
+至此，我们只需要发布插件，然后apply到我们的项目中即可。
+
+借助Hunter框架，我们很轻松就成功hack了Okhttp，我们就可以用全局统一的Intercepter/Dns/EventListener来监控我们APP的网络了。另外，说个题外话，可能有人可能会说，并非所有网络请求都是通过Okhttp来写，也可能是通过URLConnection来写，可以参考我另一篇文章提到的 
 
 http://quinnchen.me/2017/11/18/2017-11-18-android-http-dns/#HttpURLConnection
 
-这里有讲解如何将URLConnection的请求导向自己指定的OkhttpClient.
+这篇文章有讲解如何将URLConnection的请求导向自己指定的OkhttpClient.
+
+讲到这里，就完整得介绍了如何使用Hunter框架开发一个字节码编译插件，对第三方依赖库为所欲为。如果对于代码还有疑惑，可以移步项目主页，参考完整代码，以及其他几个插件的实现。
+
+
+
+## 总结
+
+
 
 
 
