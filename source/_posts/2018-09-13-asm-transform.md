@@ -1264,12 +1264,19 @@ http://quinnchen.me/2017/11/18/2017-11-18-android-http-dns/#HttpURLConnection
 讲到这里，就完整得介绍了如何使用Hunter框架开发一个字节码编译插件，对第三方依赖库为所欲为。如果对于代码还有疑惑，可以移步项目主页，参考完整代码，以及其他几个插件的实现。
 
 
-
 ## 总结
 
+这篇文章写到这里差不多了，全文主要围绕Hunter展开介绍，分析了如何开发一个高效的修改字节码的编译插件，以及ASM字节码技术的一些相关工作流，以及介绍Hunter框架。
 
+也还原大家前往[Hunter](https://github.com/Leaking/Hunter)项目主页，欢迎使用[Hunter](https://github.com/Leaking/Hunter)框架开发插件，以及使用现有的几个插件，也欢迎提issue。
 
+## 参考资料与文章推荐
 
+[深入理解Java虚拟机](https://book.douban.com/subject/24722612/)
+
+[ASM GUIDE](https://asm.ow2.io/asm4-guide.pdf)
+
+[一份不错的字节码技术PPT](https://s3-eu-west-1.amazonaws.com/presentations2012/30_presentation.pdf)
 
 
 
