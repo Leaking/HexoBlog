@@ -1,40 +1,37 @@
 ---
-title: 如何使用ASM对你Android项目中的class为所欲为
+title: 一起玩转Android项目中的字节码
 date: 2018-09-13 23:12:06
 tags: Android, JVM
 ---
 
-作为Android开发，
+作为Android开发，日常写Java代码之余，是否想过，玩玩Class文件？直接对class文件的字节码下手，我们可以做很多好玩的事情，比如：
 
-是否也曾这样想，要对全局所有class插桩，做UI，内存，网络等等方面性能监控;
++ 对全局所有class插桩，做UI，内存，网络等等方面性能监控
++ 某个第三方依赖，用起来不爽，但是不想拿它的源码修改再重新编译，而想对它的class直接做点手脚
++ 每次写打log时，想让TAG自动生成，让它默认就是当前类的名称，甚至你想让log里自动加上当前代码所在的行数，更方便定位日志位置
++ Java自带的动态代理太弱了，只能对接口类做动态代理，而我们想对任何类做动态代理
 
-是否也曾这样想，某个第三方依赖，用得不爽，但是不想拿它的源码修改再重新编译，而想对它的class直接做点手脚，比如给Okhttp加一个全局的Interceptor，监控流量？
+为了实现上面这些想法，可能我们最开始的第一反应，都是能否通过代码生成技术、APT，抑或反射、抑或动态代理来实现，但是想来想去，貌似这些方案都不能很好满足上面的需求，而且，有些问题不能从Java文件入手，而应该从class文件寻找突破。而从class文件入手，我们就不得不来近距离接触一下字节码！
 
-是否也曾这样想，每次写打log时，想让TAG自动生成，让它默认就是当前类的名称，甚至你想让log里自动加上当前代码所在的行数，当同个class中有多行相同日志时，才容易定位日志;
-
-是否也曾这样想，Java自带的动态代理太弱了，只能对接口类做动态代理，而我们想对任何类做动态代理;
-
-为了实现上面这些想法，可能我们最开始的第一反应，都是能否通过代码生成技术、APT来实现呢，抑或反射、抑或动态代理来实现，但是想来想去，貌似这些方案都不能很好满足上面的需求，而且，以上这些问题都不能从Java文件入手，而应该从class文件寻找突破。而从class文件入手，我们就不得不来近距离接触一下字节码！
-
-JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中的常青树，Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，还有大名鼎鼎的[cglib](https://github.com/cglib/cglib)项目，都有字节码的身影。
+JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernate, MyBatis）到Mock框架（如Mockio），再到Java Web中的常青树Spring框架，再到新兴的JVM语言[Kotlin的编译器](https://github.com/JetBrains/kotlin/tree/v1.2.30/compiler/backend/src/org/jetbrains/kotlin/codegen)，还有大名鼎鼎的[cglib](https://github.com/cglib/cglib)项目，都有字节码的身影。
 
 字节码相关技术的强大之处自然不用多说，而且在Android开发中，无论是使用Java开发和Kotlin开发，都是JVM平台的语言，所以如果我们在Android开发中，使用字节码技术做一下hack，还可以天然地兼容Java和Kotlin语言。
 
-近来我对字节码技术在Android上的应用做了一些研究，顺便做了几个小轮子，项目地址：[Hunter](https://github.com/Leaking/Hunter)
+近来我对字节码技术在Android上的应用做了一些调研和实践，顺便做了几个小轮子，项目地址：[Hunter](https://github.com/Leaking/Hunter)
 
-+ Hunter: 一个插件框架，在这基础上可以快速开发一个并发、增量的字节码编译插件，帮助开发人员隐藏了Transform和ASM的绝大部分逻辑，开发者只需写少量的ASM code，就可以开发一款编译插件，修改Android项目的字节码。
++ Hunter: 一个插件框架，在它的基础上可以快速开发一个并发、增量的字节码编译插件，帮助开发人员隐藏了Transform和ASM的绝大部分逻辑，开发者只需写少量的ASM code，就可以开发一款编译插件，修改Android项目的字节码。
 
-在上面框架基础上，自己开发了几个小工具
+在上面框架基础上，我还开发了几个小工具
 
- + [OkHttp-Plugin](#okhttp-plugin): 可以为你的应用所有的OkhttpClient设置全局 [Interceptor](https://github.com/square/okhttp/wiki/Interceptors) / [Eventlistener](https://github.com/square/okhttp/wiki/Events) 
-(包括第三方依赖里的OkhttpClient)
+ + [OkHttp-Plugin](#okhttp-plugin): 可以为你的应用所有的OkhttpClient设置全局 [Interceptor](https://github.com/square/okhttp/wiki/Interceptors) / [Eventlistener](https://github.com/square/okhttp/wiki/Events)，
+(包括第三方依赖里的OkhttpClient)，借助这个插件，可以轻松实现全局网络监控。
  + [Timing-Plugin](#timing-plugin): 帮你监控所有UI线程的执行耗时，并且提供了算法，帮你打印出一个带有每步耗时的堆栈，统计卡顿方法分布，你也可以自定义分析卡顿堆栈的方式。
  + [LogLine-Plugin](#logline-plugin): 为你的日志加上行号
- + [Debug-Plugin](#debug-plugin): 只要为指定方法加上某个annotation，就可以帮你打印出这个方法所有输入参数的值，以及返回值，执行时间(JakeWharton的[hugo](https://github.com/JakeWharton/hugo)用AspectJ实现了类似功能, 而我的实现方式是基于ASM，ASM处理字节码的速度更快)
+ + [Debug-Plugin](#debug-plugin): 只要为指定方法加上某个annotation，就可以帮你打印出这个方法所有输入参数的值，以及返回值和执行时间(其实，JakeWharton的[hugo](https://github.com/JakeWharton/hugo)用AspectJ实现了类似功能，而我的实现方式是基于ASM，ASM处理字节码的速度更快)
  + 你可以在这里查看我想继续开发的一些插件 [TODO](https://github.com/Leaking/Hunter/blob/master/TODO.md)，另外，欢迎你提供你宝贵的idea
 
 
-今天写这篇文章，记录开发过程中的技术点滴。
+今天写这篇文章，分享自己摸索相关技术和开发这个项目过程中的一些鸡肋。
 
 这个项目主要使用的技术是Android gradle插件，Transform，ASM与字节码基础。这篇文章将主要围绕以下几个技术点展开：
 
@@ -42,7 +39,9 @@ JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernat
 + ASM的应用，开发流，以及与Android工程的适配
 + 几个具体应用案例
 
-话不多说，让我们开始吧
+所以阅读这篇文章，读者最好有Android开发以及编写简单Gradle插件的背景知识。
+
+话不多说，让我们开始吧。
 
 
 # 一、Transform
@@ -51,7 +50,7 @@ JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernat
 ## 引入Transform
 
 
-我们在这里先引出一个概念，就是Android gradle plugin 1.5开始引入的[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)。
+[Transform](http://google.github.io/android-gradle-dsl/javadoc/3.2/)是Android gradle plugin 1.5开始引入的概念。
 
 我们先从如何引入Transform依赖说起，首先我们需要编写一个自定义插件，然后在插件中注册一个自定义Transform。这其中我们需要先通过gradle引入Transform的依赖，这里有一个坑，Transform的库最开始是独立的，后来从2.0.0版本开始，被归入了Android编译系统依赖的gradle-api中，让我们看看Transform在[jcenter](https://dl.bintray.com/android/android-tools/com/android/tools/build/transform-api/)上的历个版本。
 
@@ -67,7 +66,8 @@ compile 'com.android.tools.build:transform-api:1.5.0'
 现在是这样
 
 ```groovy
-implementation 'com.android.tools.build:gradle-api:3.1.4'  //从2.0.0版本开始就是在gradle-api中了
+//从2.0.0版本开始就是在gradle-api中了
+implementation 'com.android.tools.build:gradle-api:3.1.4'  
 
 ```
 
@@ -114,7 +114,7 @@ public class CustomPlugin implements Plugin<Project> {
 这个方法的脉络很清晰，我们可以看到，Jacoco，Desugar，MergeJavaRes，AdvancedProfiling，Shrinker，Proguard, JarMergeTransform, MultiDex, Dex都是通过Transform的形式一个个串联起来。其中也有将我们自定义的Transform插进去。
 
 
-讲完了Transform的数据流动的原理，再介绍Transform的输入数据的过滤机制，Transform的数据输入，可以通过Scope和ContentType两个维度进行过滤。
+讲完了Transform的数据流动的原理，我们再来介绍一下Transform的输入数据的过滤机制，Transform的数据输入，可以通过Scope和ContentType两个维度进行过滤。
 
 ![](/images/transformscope&contenttype.png)
 
@@ -285,10 +285,10 @@ public boolean isIncremental() {
 ```
 
 
-开启了支持增量编译后，我们可以在transform方法中，检查当前编译是否是增量编译。
+虽然开启了增量编译，但也并非每次编译过程都是支持增量的，毕竟一次clean build完全没有增量的基础，所以，我们需要检查当前编译是否是增量编译。
 
 如果不是增量编译，则清空output目录，然后按照前面的方式，逐个class/jar处理
-如果是增量编译，则要检查每个文件的Status，Status分四种，
+如果是增量编译，则要检查每个文件的Status，Status分四种，并且对这四种文件的操作也不尽相同
 
 ![](/images/transform_Status.png)
 
@@ -375,7 +375,7 @@ public void transform(TransformInvocation transformInvocation){
 }
 
 ```
-
+这就能为我们的编译插件提供增量的特性。
 
 实现了增量编译后，我们最好也支持并发编译，并发编译的实现并不复杂，只需要将上面处理单个jar/class的逻辑，并发处理，最后阻塞等待所有任务结束即可。
 
@@ -402,7 +402,9 @@ waitableExecutor.waitForTasksWithQuickFail(true);
 ```
 
 
-接下来我们对编译速度做一个对比，首先，在QQ邮箱Android客户端工程中，我们先做一次cleanbuild
+接下来我们对编译速度做一个对比，每个实验都是5次同种条件下编译10次，去除最大大小值，取平均时间
+
+首先，在QQ邮箱Android客户端工程中，我们先做一次cleanbuild
 
 ```groovy
 ./gradlew clean assembleDebug --profile
@@ -412,7 +414,7 @@ waitableExecutor.waitForTasksWithQuickFail(true);
 
 ![](/images/transform_time_1.png)
 
-可以发现，并发编译，基本比非并发编译速度提高了80%。效果很显著
+可以发现，并发编译，基本比非并发编译速度提高了80%。效果很显著。
 
 
 然后，让我们再做另一个试验，我们在项目中模拟日常修改某个class文件的一行代码，这时是符合增量编译的环境的。然后在刚才基础上还是做同样的插桩逻辑，对比增量Transform和全量Transform的差异。
@@ -450,7 +452,7 @@ JVM平台上，处理字节码的框架最常见的就三个，ASM，Javasist，
 
 ASM相比Javasist的优势非常显著，ASM相比其他字节码操作库的效率和性能优势应该毋庸置疑的，毕竟是诸多JVM语言钦定的字节码生成库。
 
-我们这部分将来介绍ASM，但是由于篇幅问题，不会从字节码的基础展开介绍，着重介绍讲ASM的使用，以及ASM解析class文件结构的原理，还有应用于Android插件开发时，遇到的问题，及其解决方案。
+我们这部分将来介绍ASM，但是由于篇幅问题，不会从字节码的基础展开介绍，会通过几个实例的实现介绍一些字节码的相关知识，另外还会介绍ASM的使用，以及ASM解析class文件结构的原理，还有应用于Android插件开发时，遇到的问题，及其解决方案。
 
 
 ## ASM的引入
