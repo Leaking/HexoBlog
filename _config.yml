@@ -45,6 +45,7 @@ highlight:
 
 avatar: /images/avatar
 duoshuo_shortname: quinnchen
+busuanzi: true ## If you want to use Busuanzi page views please set the value to true.
 
 # Category & Tag
 default_category: uncategorized

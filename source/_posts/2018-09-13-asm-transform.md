@@ -4,6 +4,15 @@ date: 2018-09-13 23:12:06
 tags: Android, JVM
 ---
 
+
+![](/images/asm_logo.jpeg)
+
+
+带你对项目中的字节码为所欲为
+
+<!-- more -->
+
+
 作为Android开发，日常写Java代码之余，是否想过，玩玩class文件？直接对class文件的字节码下手，我们可以做很多好玩的事情，比如：
 
 + 对全局所有class插桩，做UI，内存，网络等等方面的性能监控
