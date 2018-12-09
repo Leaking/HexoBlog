@@ -4,10 +4,10 @@ date: 2018-09-13 23:12:06
 tags: Android, JVM
 ---
 
-作为Android开发，日常写Java代码之余，是否想过，玩玩Class文件？直接对class文件的字节码下手，我们可以做很多好玩的事情，比如：
+作为Android开发，日常写Java代码之余，是否想过，玩玩class文件？直接对class文件的字节码下手，我们可以做很多好玩的事情，比如：
 
-+ 对全局所有class插桩，做UI，内存，网络等等方面性能监控
-+ 某个第三方依赖，用起来不爽，但是不想拿它的源码修改再重新编译，而想对它的class直接做点手脚
++ 对全局所有class插桩，做UI，内存，网络等等方面的性能监控
++ 发现某个第三方依赖，用起来不爽，但是不想拿它的源码修改再重新编译，而想对它的class直接做点手脚
 + 每次写打log时，想让TAG自动生成，让它默认就是当前类的名称，甚至你想让log里自动加上当前代码所在的行数，更方便定位日志位置
 + Java自带的动态代理太弱了，只能对接口类做动态代理，而我们想对任何类做动态代理
 
@@ -677,7 +677,7 @@ CallClassAdapter中的visitMethod使用了一个自定义的MethodVisitor-----Ca
 
 看到这里，貌似使用ASM修改字节码的大概套路都走完了，那么如何写出上面`visitMethodInsn`方法中插入打印方法名的逻辑，这就需要一些字节码的基础知识了，我们说过这里不会展开介绍字节码，但是我们可以介绍一些快速学习字节码的方式，同时也是开发字节码相关工程一些实用的工具。
 
-先从行号开始吧
+在这之前，我们先讲讲行号的问题
 
 ### 如何验证行号
 
@@ -713,8 +713,9 @@ idea下可以开启一个选项，让查看class内容时，保留真正的行�
 
 ![](/images/transform_line_2.png)
 
+我们可以发现，17行和18行，分别包含了三句代码。
 
-开启之前是这样
+而开启选项之前是这样
 
 ![](/images/transform_line_1.png)
 
@@ -1107,7 +1108,8 @@ public class OkHttpHooker {
 
 继承HunterTransform，就可以让你的transform具备并发、增量的功能。
 
-```
+```java
+
 final class OkHttpHunterTransform extends HunterTransform {
 
     private Project project;
@@ -1145,6 +1147,8 @@ public final class OkHttpWeaver extends BaseWeaver {
     }
 
 }
+
+
 
 
 //插件扩展
@@ -1263,14 +1267,15 @@ http://quinnchen.me/2017/11/18/2017-11-18-android-http-dns/#HttpURLConnection
 
 这篇文章有讲解如何将URLConnection的请求导向自己指定的OkhttpClient.
 
-讲到这里，就完整得介绍了如何使用Hunter框架开发一个字节码编译插件，对第三方依赖库为所欲为。如果对于代码还有疑惑，可以移步项目主页，参考完整代码，以及其他几个插件的实现。
+讲到这里，就完整得介绍了如何使用Hunter框架开发一个字节码编译插件，对第三方依赖库为所欲为。如果对于代码还有疑惑，可以移步项目主页，参考完整代码，以及其他几个插件的实现。有时间再写文章介绍其他几个插件的具体实现。
+
 
 
 ## 总结
 
-这篇文章写到这里差不多了，全文主要围绕Hunter展开介绍，分析了如何开发一个高效的修改字节码的编译插件，以及ASM字节码技术的一些相关工作流，以及介绍Hunter框架。
+这篇文章写到这里差不多了，全文主要围绕Hunter展开介绍，分析了如何开发一个高效的修改字节码的编译插件，以及ASM字节码技术的一些相关工作流和开发套路。
 
-也还原大家前往[Hunter](https://github.com/Leaking/Hunter)项目主页，欢迎使用[Hunter](https://github.com/Leaking/Hunter)框架开发插件，以及使用现有的几个插件，也欢迎提issue。
+也还原大家前往[Hunter](https://github.com/Leaking/Hunter)项目主页，欢迎使用[Hunter](https://github.com/Leaking/Hunter)框架开发插件，以及使用现有的几个插件，也欢迎提issue，欢迎star/fork。
 
 ## 参考资料与文章推荐
 
