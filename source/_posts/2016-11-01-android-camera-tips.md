@@ -1,7 +1,7 @@
 ---
 title: Android 自定义相机小结
 date: 2016-11-01 16:58:40
-tags: Android
+tags: [Android]
 ---
 
 近来在做一个关于Android中Camera的需求，此处做点简要记录。提供给大家参考，避免以后猜到这些坑。

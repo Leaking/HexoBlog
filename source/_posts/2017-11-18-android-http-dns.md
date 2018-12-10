@@ -2,7 +2,7 @@
 title: 如何为Android应用提供全局的HttpDNS服务
 date: 2017-11-18 17:58:40
 toc: true
-tags: NetWork
+tags: [Network,Android,HTTP]
 ---
 
 
