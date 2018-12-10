@@ -1,4 +1,4 @@
-4---
+---
 title: Apache POI获取Excel内嵌图片大小的一处bug
 date: 2018-04-09 20:38:40
 tags: POI
