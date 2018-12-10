@@ -330,7 +330,7 @@ public void transform(TransformInvocation transformInvocation){
             if(isIncremental && !emptyRun) {
                 switch(status) {
                     case NOTCHANGED:
-                        continue;
+                        break;
                     case ADDED:
                     case CHANGED:
                         transformJar(jarInput.getFile(), dest, status);
