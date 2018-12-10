@@ -40,7 +40,7 @@ JVM平台上，修改、生成字节码无处不在，从ORM框架（如Hibernat
  + 你可以在这里查看我想继续开发的一些插件 [TODO](https://github.com/Leaking/Hunter/blob/master/TODO.md)，另外，欢迎你提供你宝贵的idea
 
 
-今天写这篇文章，分享自己摸索相关技术和开发这个项目过程中的一些鸡肋。
+今天写这篇文章，分享自己摸索相关技术和开发这个项目过程中的一些积累。
 
 这个项目主要使用的技术是Android gradle插件，Transform，ASM与字节码基础。这篇文章将主要围绕以下几个技术点展开：
 
@@ -413,7 +413,7 @@ waitableExecutor.waitForTasksWithQuickFail(true);
 
 接下来我们对编译速度做一个对比，每个实验都是5次同种条件下编译10次，去除最大大小值，取平均时间
 
-首先，在QQ邮箱Android客户端工程中，我们先做一次cleanbuild
+首先，在我工作中的项目（Java/kotlin代码量行数百万级别），我们先做一次cleanbuild
 
 ```groovy
 ./gradlew clean assembleDebug --profile
