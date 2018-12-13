@@ -12,6 +12,8 @@ tags: [Android,JVM,Gralde]
 
 <!-- more -->
 
+*本篇文章已授权微信公众号 guolin_blog （郭霖）独家发布*
+
 
 作为Android开发，日常写Java代码之余，是否想过，玩玩class文件？直接对class文件的字节码下手，我们可以做很多好玩的事情，比如：
 
