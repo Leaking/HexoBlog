@@ -1278,7 +1278,7 @@ http://quinnchen.me/2017/11/18/2017-11-18-android-http-dns/#HttpURLConnection
 
 这篇文章写到这里差不多了，全文主要围绕Hunter展开介绍，分析了如何开发一个高效的修改字节码的编译插件，以及ASM字节码技术的一些相关工作流和开发套路。
 
-也还原大家前往[Hunter](https://github.com/Leaking/Hunter)项目主页，欢迎使用[Hunter](https://github.com/Leaking/Hunter)框架开发插件，以及使用现有的几个插件，也欢迎提issue，欢迎star/fork。
+也欢迎大家前往[Hunter](https://github.com/Leaking/Hunter)项目主页，欢迎使用[Hunter](https://github.com/Leaking/Hunter)框架开发插件，以及使用现有的几个插件，也欢迎提issue。
 
 ## 参考资料与文章推荐
 
