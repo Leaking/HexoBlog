@@ -4,15 +4,7 @@ date: 2018-09-13 23:12:06
 tags: [Android,JVM,Gralde]
 ---
 
-
-![](/images/asm_logo.jpeg)
-
-
-带你对项目中的字节码为所欲为
-
-<!-- more -->
-
-*本篇文章已授权微信公众号 guolin_blog （郭霖）独家发布*
+*转载请标明出处[一起玩转Android项目中的字节码](http://quinnchen.me/2018/09/13/2018-09-13-asm-transform/)*
 
 
 作为Android开发，日常写Java代码之余，是否想过，玩玩class文件？直接对class文件的字节码下手，我们可以做很多好玩的事情，比如：
