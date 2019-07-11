@@ -85,10 +85,10 @@ theme: maupassant-hexo
 
 deploy:
   type: rsync
-  host: 172.96.229.236
-  user: root
+  host: 106.52.137.215
+  user: ubuntu
   root: /var/www/hexo
-  port: 28398
+  port: 22
   delete: true
   verbose: true
   ignore_errors: false
