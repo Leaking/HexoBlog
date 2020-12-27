@@ -72,7 +72,7 @@ pagination_dir: page
 
 
 # theme: next
-theme: maupassant-hexo
+theme: maupassant
 # theme: landscape
 
 # Deployment
