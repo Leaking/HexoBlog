@@ -74,7 +74,7 @@ footer:
     enable: true
     icp: 粤ICP备19090306号-1
     # The digit in the num of gongan beian. 粤ICP备19090306号-1
-    gongan_id: 19090306
+    gongan_id:
     # The full num of gongan beian.
     gongan_num:
     # The icon for gongan beian. See: http://www.beian.gov.cn/portal/download
@@ -389,7 +389,7 @@ bookmark:
 
 # `Follow me on GitHub` banner in the top-right corner.
 github_banner:
-  enable: true
+  enable: false
   permalink: https://github.com/Leaking
   title: Follow me on GitHub
 
@@ -634,16 +634,16 @@ livere_uid: # <your_uid>
 # For more information: https://gitalk.github.io, https://github.com/gitalk/gitalk
 gitalk:
   enable: true ## If you want to use Gitment comment system please set the value to true.
-  owner:  Leaking
-  repo:  HexoBlog ## The repository to store your comments, make sure you're the repo's owner, e.g. gitalk.github.io
-  client_id:  e039400d2f7e9959d28b ## GitHub client ID, e.g. 75752dafe7907a897619
-  client_secret:  2e2839c1bbea5c3bf07652dd8424e7dc80963046 ## GitHub client secret, e.g. ec2fb9054972c891289640354993b662f4cccc50
+  owner: Leaking
+  repo: HexoBlog ## The repository to store your comments, make sure you're the repo's owner, e.g. gitalk.github.io
+  client_id: e039400d2f7e9959d28b ## GitHub client ID, e.g. 75752dafe7907a897619
+  client_secret: 2e2839c1bbea5c3bf07652dd8424e7dc80963046 ## GitHub client secret, e.g. ec2fb9054972c891289640354993b662f4cccc50
   admin_user: # GitHub repo owner and collaborators, only these guys can initialize gitHub issues
   distraction_free_mode: true # Facebook-like distraction free mode
   # Gitalk's display language depends on user's browser or system environment
   # If you want everyone visiting your site to see a uniform language, you can set a force language value
   # Available values: en | es-ES | fr | ru | zh-CN | zh-TW
-  language:
+  language: zh-CN
 
 
 # ---------------------------------------------------------------
